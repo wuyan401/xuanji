@@ -49,6 +49,14 @@ const MIME = {
   '.webm': 'video/webm',
 };
 const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+
+/** Process memory in MB — exposed on /api/health so long-running leaks are visible. */
+function memoryReport() {
+  const m = process.memoryUsage();
+  const mb = (bytes) => Math.round((bytes / 1024 / 1024) * 10) / 10;
+  return { rss: mb(m.rss), heapUsed: mb(m.heapUsed), heapTotal: mb(m.heapTotal), external: mb(m.external) };
+}
+
 const API_ROUTES = [
   'GET /api/health',
   'GET /api/fleet',
@@ -452,6 +460,7 @@ class FleetHub {
         demoAvailable: Boolean(this.demoSource),
         systemTelemetry: Boolean(this.systemMonitor) || typeof this.primary?.getSystem === 'function',
       },
+      memory: memoryReport(),
     };
   }
 
@@ -505,25 +514,58 @@ class FleetHub {
     client.fleetTimer = setInterval(() => this.sendFleet(client), this.config.fleetFrameMs);
     if (client.fleetTimer.unref) client.fleetTimer.unref();
 
-    const close = () => {
-      if (client.closed) return;
-      client.closed = true;
-      if (client.fleetTimer) clearInterval(client.fleetTimer);
-      this.clients.delete(client);
-    };
+    const close = () => this.closeClient(client);
     req.on('close', close);
     req.on('aborted', close);
     res.on('close', close);
     res.on('error', close);
   }
 
+  /**
+   * Write one SSE chunk to a client.
+   *
+   * Slow-client protection: a backgrounded/suspended browser tab stops draining
+   * the socket, so `res.write()` silently queues chunks in Node's write buffer.
+   * The 1/s full-fleet frame is ~0.6MB, which would otherwise grow the heap by
+   * hundreds of MB per hour and eventually OOM the server. We therefore skip
+   * frames while a client is backed up, and drop the connection once it is far
+   * behind (SSE reconnects automatically, and the first frame is a full fleet).
+   */
   writeClient(client, chunk) {
     if (client.closed || client.res.writableEnded) return false;
+    const buffered = client.res.writableLength ?? 0;
+    const limit = this.config.sseMaxBuffer;
+    if (buffered > limit) {
+      client.dropped = (client.dropped ?? 0) + 1;
+      if (client.dropped === 1) {
+        this.log(`[sse] slow client buffered ${Math.round(buffered / 1024)}KB — skipping frames`);
+      }
+      if (buffered > limit * 4 || client.dropped > 240) {
+        this.log(`[sse] dropping stalled client (${Math.round(buffered / 1024)}KB buffered)`);
+        this.closeClient(client, true);
+      }
+      return false;
+    }
+    client.dropped = 0;
     try {
       client.res.write(chunk);
       return true;
     } catch {
       return false;
+    }
+  }
+
+  closeClient(client, destroy = false) {
+    if (client.closed) return;
+    client.closed = true;
+    if (client.fleetTimer) clearInterval(client.fleetTimer);
+    this.clients.delete(client);
+    if (destroy) {
+      try {
+        client.res.destroy();
+      } catch {
+        /* already gone */
+      }
     }
   }
 

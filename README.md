@@ -117,6 +117,8 @@ pnpm dev              # 后端 8787 + Vite 5173，浏览器打开 5173
 - 服务默认只绑定 `127.0.0.1`；**没有任何遥测上报或联网请求**。
 - 来源可用环境变量覆盖：`DSH_HOME` / `HERMES_DB` / `OPENCODE_DB` / `CLAUDE_DIR` / `CODEX_DIR`；
   关闭整机遥测：`SYSTEM_TELEMETRY=0`。
+- 服务端运行参数：`PORT`（默认 8787）、`HOST`（默认 127.0.0.1）、`SSE_MAX_BUFFER`（慢客户端写缓冲上限，默认 2MB；
+  后台标签页不再读取 SSE 时自动跳帧/断开，避免内存无界增长）。
 - 网络/整机口径：macOS/Linux 上除整机遥测外均可用；整机遥测脚本目前为 Windows PowerShell 实现。
 
 ---

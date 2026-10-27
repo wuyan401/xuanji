@@ -283,7 +283,24 @@ export class SystemMonitor extends EventEmitter {
 
 function configShellCandidates(config) {
   if (Array.isArray(config.shellCandidates) && config.shellCandidates.length) return config.shellCandidates;
-  return ['pwsh', 'powershell.exe'];
+  if (process.platform !== 'win32') return ['pwsh', 'powershell'];
+  // Prefer absolute paths: a server launched from a stripped-PATH environment
+  // (services, CI, background jobs) cannot resolve `pwsh` by name, which used to
+  // leave machine telemetry permanently unavailable.
+  const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+  const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+  const absolute = [
+    path.join(programFiles, 'PowerShell', '7', 'pwsh.exe'),
+    path.join(programFiles, 'PowerShell', '7-preview', 'pwsh.exe'),
+    path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+  ].filter((candidate) => {
+    try {
+      return fs.existsSync(candidate);
+    } catch {
+      return false;
+    }
+  });
+  return [...absolute, 'pwsh', 'powershell.exe', 'powershell'];
 }
 
 export function createSystemMonitor(config, opts) {

@@ -103,6 +103,12 @@ export function loadConfig() {
     fleetFrameMs: num(process.env.FLEET_FRAME_MS, 1000),
     /** SSE heartbeat comment cadence (ms) */
     heartbeatMs: num(process.env.HEARTBEAT_MS, 15_000),
+    /**
+     * Slow-client protection: skip SSE frames while a client socket has more
+     * than this many bytes queued (a backgrounded tab stops draining). Without
+     * this the 1/s full-fleet frame (~0.6MB) grows the heap until OOM.
+     */
+    sseMaxBuffer: num(process.env.SSE_MAX_BUFFER, 2 * 1024 * 1024),
     /** print one collector timing line per poll unless disabled */
     logPoll: process.env.LOG_POLL !== '0',
     verbose: process.env.VERBOSE === '1',
