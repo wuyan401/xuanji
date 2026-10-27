@@ -1,0 +1,424 @@
+/* XUANJI · 璇玑 — 授时（开机序列 · §17.5 虹膜）
+   0–0.5s 微光｜0.5–1.4s 三行自检｜1.4–1.9s 钟鸣｜1.9–3.2s 虹膜展开 + 三环 + 六珠 + 一道扫描线。
+   黑场用 mask 的圆孔从 140px 扩到全屏；珠点是仪表（live 金实心 / idle 骨白空心），不是装饰。 */
+
+@property --iris-r {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-boot);
+  pointer-events: auto;
+}
+.boot.is-out {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 260ms linear;
+}
+
+/* 黑场：中心圆孔即虹膜 */
+.boot-black {
+  position: absolute;
+  inset: 0;
+  background: var(--ink-void);
+  -webkit-mask-image: radial-gradient(
+    circle at 50% 46%,
+    transparent 0,
+    transparent calc(var(--iris-r) - 1px),
+    #000 calc(var(--iris-r) + 1px)
+  );
+  mask-image: radial-gradient(
+    circle at 50% 46%,
+    transparent 0,
+    transparent calc(var(--iris-r) - 1px),
+    #000 calc(var(--iris-r) + 1px)
+  );
+  transition: --iris-r 1250ms var(--ease-out);
+}
+.boot[data-phase='glow'] .boot-black,
+.boot[data-phase='check'] .boot-black,
+.boot[data-phase='bell'] .boot-black {
+  --iris-r: 3px;
+}
+.boot.is-iris .boot-black {
+  --iris-r: 160vmax;
+}
+
+.boot-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* 微光：唯一主光源，中心偏上 */
+.boot-stage::before {
+  content: '';
+  position: absolute;
+  top: 46%;
+  left: 50%;
+  width: min(520px, 150vmin);
+  height: min(520px, 150vmin);
+  background: radial-gradient(circle, rgba(232, 200, 120, 0.13), transparent 60%);
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  animation: xj-boot-glow 900ms ease-out 60ms forwards;
+  pointer-events: none;
+}
+/* 钟鸣时的极轻闪白（≤6%） */
+.boot-stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--gold-100);
+  opacity: 0;
+  pointer-events: none;
+}
+.boot[data-phase='bell'] .boot-stage::after {
+  animation: xj-boot-flash 260ms ease-out both;
+}
+
+/* ── 自检三行 ─────────────────────────────────────────────── */
+.boot-check {
+  position: absolute;
+  top: 46%;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  width: min(340px, calc(100vw - 64px));
+  transform: translate(-50%, -50%);
+}
+.boot-check-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.9;
+  letter-spacing: 0.06em;
+  color: var(--bone-300);
+  clip-path: inset(0 100% 0 0);
+}
+.boot-check-line.is-in {
+  clip-path: inset(0);
+  transition: clip-path 300ms var(--ease-engrave);
+}
+.boot-check-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.boot-num {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--gold-200);
+  font-variant-numeric: tabular-nums;
+}
+.boot-check-leader {
+  flex: 1 1 auto;
+  align-self: center;
+  min-width: 18px;
+  height: 0;
+  border-bottom: 1px dotted var(--ink-line-strong);
+}
+.boot-check-status {
+  flex: 0 0 auto;
+  letter-spacing: 0.14em;
+  color: var(--gold-200);
+}
+.boot-check.is-out {
+  opacity: 0;
+  transition: opacity 240ms linear;
+}
+
+/* ── 钟鸣：冲击波 + 44px「授时」 ──────────────────────────── */
+.boot-bell {
+  position: absolute;
+  top: 46%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+}
+.boot-bell.is-in {
+  opacity: 1;
+  transition: opacity 220ms linear;
+}
+.boot-bell.is-out {
+  opacity: 0;
+  transition: opacity 280ms linear;
+}
+.boot-shock {
+  position: absolute;
+  width: 132px;
+  height: 132px;
+  margin: auto;
+  border: 1px solid rgba(232, 200, 120, 0.5);
+  border-radius: 50%;
+  opacity: 0;
+  transform: scale(0.35);
+}
+.boot-bell.is-in .boot-shock {
+  animation: xj-boot-shock 640ms cubic-bezier(0.16, 0.84, 0.28, 1) 40ms both;
+}
+.boot-title {
+  font-family: var(--font-display);
+  font-size: 44px;
+  line-height: 1.1;
+  letter-spacing: 0.5em;
+  padding-left: 0.5em;
+  color: var(--gold-100);
+  text-shadow: 0 0 30px rgba(232, 200, 120, 0.22);
+}
+.boot-bell.is-in .boot-title {
+  animation: xj-boot-title 460ms var(--ease-out) both;
+}
+
+/* ── 虹膜：三环 + 刻度 + 六珠 + 扫描线 ────────────────────── */
+.boot-iris {
+  position: absolute;
+  top: 46%;
+  left: 50%;
+  width: min(360px, 72vmin);
+  height: min(360px, 72vmin);
+  overflow: visible;
+  transform: translate(-50%, -50%);
+  /* 刻线落在星图上也必须读得出来：先一圈墨底，再一层极淡金晕 */
+  filter: drop-shadow(0 0 2px rgba(5, 7, 11, 0.9)) drop-shadow(0 0 10px rgba(232, 200, 120, 0.14));
+}
+.boot-ring {
+  opacity: 0;
+  transform: scale(0.72);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.boot-ring.is-in {
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 460ms linear,
+    transform 1000ms var(--ease-out);
+}
+.boot-ring:nth-of-type(1) {
+  transition-delay: 40ms;
+}
+.boot-ring:nth-of-type(2) {
+  transition-delay: 130ms;
+}
+.boot-ring:nth-of-type(3) {
+  transition-delay: 230ms;
+}
+.boot-ticks {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: rotate(-8deg);
+}
+.boot-ticks.is-in {
+  opacity: 1;
+  transform: rotate(0);
+  transition:
+    opacity 640ms linear 330ms,
+    transform 900ms var(--ease-out) 300ms;
+}
+.boot-bead {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.boot-bead.is-in {
+  opacity: 1;
+  transition: opacity 360ms linear 430ms;
+  animation: xj-boot-bead 900ms ease-out 430ms both;
+}
+.boot-scan {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(232, 200, 120, 0.55), transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+.boot.is-iris .boot-scan {
+  animation: xj-boot-scan 1000ms var(--ease-in-out) 60ms both;
+}
+
+/* ── 越过提示 ─────────────────────────────────────────────── */
+.boot-skip {
+  position: absolute;
+  right: clamp(18px, 3vw, 40px);
+  bottom: 28px;
+  min-height: 36px;
+  padding: 6px 2px;
+  border: 0;
+  border-bottom: 1px solid var(--ink-line);
+  background: none;
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.4;
+  letter-spacing: 0.14em;
+  color: var(--bone-500);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: auto;
+}
+.boot-skip.is-in {
+  opacity: 1;
+  transition: opacity 420ms linear 120ms;
+}
+.boot-skip:hover,
+.boot-skip:focus-visible {
+  border-bottom-color: var(--gold-400);
+  color: var(--bone-200);
+}
+
+/* ── 短序列（reduced-motion / 二次访问）：600ms 三环与珠点同时淡入 ── */
+.boot.is-short .boot-black {
+  -webkit-mask-image: none;
+  mask-image: none;
+  animation: xj-boot-black-out 560ms linear both;
+}
+.boot.is-short .boot-check,
+.boot.is-short .boot-bell,
+.boot.is-short .boot-skip {
+  display: none;
+}
+.boot.is-short .boot-iris {
+  width: min(300px, 64vmin);
+  height: min(300px, 64vmin);
+}
+.boot.is-short .boot-ring,
+.boot.is-short .boot-bead,
+.boot.is-short .boot-ticks {
+  opacity: 1;
+  transform: none;
+  transition: opacity 560ms linear;
+  animation: none;
+}
+.boot.is-short .boot-scan {
+  display: none;
+}
+
+/* ── 关键帧 ───────────────────────────────────────────────── */
+@keyframes xj-boot-glow {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes xj-boot-flash {
+  0% {
+    opacity: 0;
+  }
+  32% {
+    opacity: 0.055;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes xj-boot-shock {
+  0% {
+    opacity: 0.55;
+    transform: scale(0.35);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(4.4);
+  }
+}
+@keyframes xj-boot-title {
+  from {
+    opacity: 0;
+    letter-spacing: 0.64em;
+    transform: scale(1.04);
+  }
+  to {
+    opacity: 1;
+    letter-spacing: 0.5em;
+    transform: scale(1);
+  }
+}
+@keyframes xj-boot-bead {
+  0% {
+    opacity: 0.2;
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes xj-boot-scan {
+  0% {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  10% {
+    opacity: 1;
+  }
+  86% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(100vh);
+  }
+}
+@keyframes xj-boot-black-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* ── 移动端 ≤720px ────────────────────────────────────────── */
+@media (max-width: 720px) {
+  .boot-check {
+    width: calc(100vw - 48px);
+    gap: 8px;
+    font-size: 12px;
+  }
+  .boot-title {
+    font-size: 40px;
+    letter-spacing: 0.44em;
+    padding-left: 0.44em;
+  }
+  .boot-skip {
+    right: 18px;
+    bottom: 22px;
+    min-height: 40px;
+    font-size: 12.5px;
+  }
+  .boot-iris {
+    width: min(300px, 74vmin);
+    height: min(300px, 74vmin);
+  }
+}
+
+/* ── reduced motion：只留一次 600ms 淡入 ──────────────────── */
+.xj-hud[data-reduced='true'] .boot-scan {
+  display: none;
+}
+.xj-hud[data-reduced='true'] .boot-stage::before {
+  animation: none;
+  opacity: 1;
+}
+.xj-hud[data-reduced='true'] .boot-black {
+  transition: none;
+}

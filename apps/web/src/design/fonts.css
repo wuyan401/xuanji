@@ -1,0 +1,54 @@
+/* XUANJI · 璇玑 — 字体加载
+ * 显示体（标题/账本章节/大数字旁的汉字）用霞鹜文楷 500，自带古典书卷气；
+ * 正文用思源宋体 400/600；数字与拉丁用 JetBrains Mono 400/500/700（等宽，数据表对齐用）。
+ * 六个 woff2 全部本地打包（不放 woff 兜底：目标浏览器均为近三年的 Chrome/Edge/Safari），
+ * 不依赖外网、不引 fontsource 包 CSS。
+ */
+
+/* 霞鹜文楷 500 —— 显示体 */
+@font-face {
+  font-family: 'Xuanji Display';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./fonts/xuanji-display-500.woff2') format('woff2');
+}
+
+/* 思源宋体 —— 正文 */
+@font-face {
+  font-family: 'Noto Serif SC';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/noto-serif-sc-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Noto Serif SC';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./fonts/noto-serif-sc-600.woff2') format('woff2');
+}
+
+/* JetBrains Mono —— 数字/拉丁/微型标签 */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/jetbrains-mono-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./fonts/jetbrains-mono-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./fonts/jetbrains-mono-700.woff2') format('woff2');
+}

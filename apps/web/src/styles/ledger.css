@@ -1,0 +1,708 @@
+/* XUANJI · 璇玑 — 《起居注》实时账本
+   §17.3 档案行：行高 28px（桌面）/ 32px（≥1440）/ 26px（≤720）；无竖线、无斑马纹、不卡片化；
+   单行制式，时间列右对齐，行间 1px ink-line；分组只用一条 1px 金线。
+   落墨 = clip-path 自左向右展开 340ms（文字不移动）；朱批/钤印 180ms 后盖章。 */
+
+.led {
+  --led-row-h: 28px;
+  position: absolute;
+  left: clamp(18px, 2.4vw, 40px);
+  bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  width: clamp(340px, 36vw, 560px);
+  height: min(34vh, 360px);
+  min-height: 132px;
+  pointer-events: auto;
+  /* 「纸背」：极深的一层墨，靠底部最实、向上化开；不是卡片底，是一页衬在星图上的纸 */
+  background: linear-gradient(
+    to top,
+    rgba(5, 7, 11, 0.94) 0%,
+    rgba(5, 7, 11, 0.85) 45%,
+    rgba(5, 7, 11, 0.55) 78%,
+    rgba(5, 7, 11, 0) 100%
+  );
+}
+
+/* 顶部一条金线：整本账的「书口」 */
+.led::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    var(--ink-line-strong),
+    var(--ink-line-strong) 34%,
+    var(--ink-line) 72%,
+    transparent
+  );
+}
+
+/* ── 账头 ─────────────────────────────────────────────────── */
+.led-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding-right: 2px;
+}
+
+.led-grip {
+  display: none;
+}
+
+/* 竖排小章「起居」 */
+.led-vertical {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 29px;
+  padding: 2px 0;
+  border: 1px solid rgba(168, 130, 63, 0.55);
+  border-radius: 1px;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  line-height: 1.1;
+  letter-spacing: 0.08em;
+  color: var(--gold-300);
+}
+
+.led-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.led-title-main {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0.24em;
+  text-indent: 0.04em;
+  color: var(--bone-100);
+  white-space: nowrap;
+}
+.led-title-sub {
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  color: var(--bone-500);
+  white-space: nowrap;
+}
+
+.led-head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  padding-left: 8px;
+}
+.led-pulse {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--state-live);
+  animation: xj-breathe 2.8s var(--ease-in-out) infinite;
+}
+.led-vol {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--bone-500);
+  white-space: nowrap;
+}
+
+/* 连接态：颜色 + 形状 + 文案三重传态 */
+.led[data-connection='connecting'] .led-pulse {
+  background: transparent;
+  border: 1px solid var(--bone-400);
+}
+.led[data-connection='demo'] .led-pulse {
+  border-radius: 1px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--gold-300) 0 1.5px,
+    transparent 1.5px 3.2px
+  );
+}
+.led[data-connection='replay'] .led-pulse {
+  background: var(--indigo-400);
+  border-radius: 1px;
+  animation: none;
+}
+.led[data-connection='reconnecting'] .led-pulse {
+  background: var(--state-error);
+  animation: xj-blink 0.9s steps(2, end) infinite;
+}
+.led[data-connection='offline'] .led-pulse {
+  background: var(--indigo-400);
+  opacity: 0.6;
+  animation: none;
+}
+
+/* 失联条：朱批描边，不常驻 */
+.led-offline {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  padding: 3px 0 5px;
+  border-bottom: 1px solid var(--ink-line-strong);
+}
+.led-offline-mark {
+  flex: 0 0 auto;
+  padding: 1px 4px;
+  border: 1px solid var(--state-error);
+  font-family: var(--font-display);
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1.2;
+  letter-spacing: 0.1em;
+  color: var(--state-error);
+}
+.led-offline-text {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--bone-300);
+}
+
+/* ── 账身 ─────────────────────────────────────────────────── */
+.led-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 2px 0 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: auto;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 8px, #000 calc(100% - 20px), transparent);
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 8px,
+    #000 calc(100% - 20px),
+    transparent
+  );
+}
+.led-body:focus-visible {
+  outline: 2px solid var(--gold-300);
+  outline-offset: -2px;
+}
+
+/* 空态 / 候墨 */
+.led-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 20px 2px;
+}
+.led-empty-text {
+  font-family: var(--font-display);
+  font-size: 14px;
+  letter-spacing: 0.18em;
+  color: rgba(237, 230, 212, 0.6);
+}
+.led-empty-sub {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--bone-500);
+}
+
+/* ── 一行档案 ─────────────────────────────────────────────── */
+.led-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 58px max-content minmax(0, 1fr) auto 33px 11px;
+  align-items: center;
+  column-gap: 9px;
+  width: 100%;
+  height: var(--led-row-h);
+  padding: 0 2px 0 1px;
+  border-bottom: 1px solid var(--ink-line);
+  color: var(--bone-200);
+  animation: xj-ink 340ms var(--ease-engrave) both;
+}
+.led-row:last-child {
+  border-bottom-color: transparent;
+}
+.led-row:hover {
+  background: linear-gradient(90deg, rgba(232, 200, 120, 0.055), transparent 72%);
+}
+.led-row:hover .led-text {
+  color: var(--gold-100);
+}
+.led-row:focus-visible {
+  outline: 2px solid var(--gold-300);
+  outline-offset: -2px;
+}
+
+/* 时间列：右对齐、等宽数字、字距统一（退到背景里，只做锚点） */
+.led-time {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0;
+  color: var(--bone-500);
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* 同一刻内的续行：史书叠记号 〃，时间脊柱不断 */
+.led-time.is-ditto {
+  color: var(--bone-400);
+  opacity: 0.72;
+  text-align: center;
+  letter-spacing: 0.12em;
+  font-size: 12px;
+}
+
+/* 分野：两个字告诉你在哪片天区；工作区留给悬停与星牒，不占行宽 */
+.led-star {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  max-width: 96px;
+  overflow: hidden;
+}
+.led-domain {
+  flex: 0 0 auto;
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: var(--gold-300);
+  opacity: 0.62;
+}
+.led-ws {
+  display: none;
+  overflow: hidden;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--bone-500);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 正文：五行字标 + 一笔文案 */
+.led-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.led-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--ink-line-strong);
+  border-radius: 2px;
+  font-family: var(--font-display);
+  font-style: normal;
+  font-size: 10.5px;
+  line-height: 1;
+  color: var(--bone-300);
+}
+.led-mark[data-cat='read'] {
+  color: var(--cat-read);
+  border-color: color-mix(in srgb, var(--cat-read) 52%, transparent);
+}
+.led-mark[data-cat='write'] {
+  color: var(--cat-write);
+  border-color: color-mix(in srgb, var(--cat-write) 52%, transparent);
+}
+.led-mark[data-cat='exec'] {
+  color: var(--cat-exec);
+  border-color: color-mix(in srgb, var(--cat-exec) 52%, transparent);
+}
+.led-mark[data-cat='net'] {
+  color: var(--cat-net);
+  border-color: color-mix(in srgb, var(--cat-net) 52%, transparent);
+}
+.led-mark[data-cat='agent'] {
+  color: var(--cat-agent);
+  border-color: color-mix(in srgb, var(--cat-agent) 52%, transparent);
+}
+.led-mark.is-blank {
+  visibility: hidden;
+}
+.led-text {
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.35;
+  letter-spacing: 0.015em;
+  color: var(--bone-100);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 右列：时长 / 轮次（等宽数字右对齐） */
+.led-meta {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0;
+  color: var(--bone-400);
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 朱批 / 钤印：180ms 后盖章 */
+.led-seal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 17px;
+  padding: 0 3px;
+  border: 1px solid currentColor;
+  border-radius: 1px;
+  font-family: var(--font-display);
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  opacity: 0;
+  transform: scale(1.45) rotate(-6deg);
+  transition:
+    opacity 150ms linear,
+    transform 190ms var(--ease-out);
+}
+.led-seal[data-seal='zhu'] {
+  color: var(--state-error);
+}
+.led-seal[data-seal='yin'] {
+  color: var(--state-approval);
+}
+.led-seal.is-none {
+  visibility: hidden;
+}
+.led-seal.is-stamped {
+  opacity: 1;
+  transform: scale(1) rotate(-2deg);
+}
+
+/* 演练：行尾「演」字 */
+.led-demo {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--gold-400);
+  text-align: center;
+  opacity: 0.85;
+}
+
+/* 轻行（还报 / 步毕）：退成涟漪，不与主行争 */
+.led-row.is-ripple .led-text {
+  font-size: 12.5px;
+  color: var(--bone-400);
+}
+.led-row.is-ripple .led-mark {
+  opacity: 0.56;
+}
+.led-row.is-ripple .led-meta {
+  color: var(--bone-500);
+}
+
+/* 朱批行：左侧 3px 朱线；此处是「批注」不是表格竖线 */
+.led-row.is-error {
+  padding-left: 10px;
+}
+.led-row.is-error::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  width: 3px;
+  background: var(--state-error);
+  opacity: 0.9;
+}
+.led-row.is-error .led-text {
+  color: var(--bone-100);
+}
+.led-row.is-error .led-time {
+  color: var(--state-error);
+  opacity: 0.85;
+}
+.led-row.is-fresh {
+  animation:
+    xj-ink 340ms var(--ease-engrave) both,
+    xj-error-wash 1200ms var(--ease-out);
+}
+
+/* 选中：极淡的金色渗入，配左侧 1px 线 */
+.led-row.is-sel {
+  background: linear-gradient(90deg, rgba(232, 200, 120, 0.09), transparent 78%);
+}
+.led-row.is-sel .led-text {
+  color: var(--gold-100);
+}
+.led-row.is-sel::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  right: 0;
+  width: 1px;
+  background: var(--gold-500);
+}
+
+/* 已归档（ended > 30min）：整块降饱和，只留类别色一处 */
+.led-row.is-archived {
+  filter: saturate(0.55);
+  opacity: 0.62;
+}
+
+/* ── 卷分隔：每 30 分钟一卷 ───────────────────────────────── */
+.led-div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  margin: 3px 0 2px;
+}
+.led-div-line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--ink-line-strong));
+}
+.led-div-line:last-child {
+  background: linear-gradient(270deg, transparent, var(--ink-line-strong));
+}
+.led-div-text {
+  flex: 0 0 auto;
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  color: var(--gold-300);
+  white-space: nowrap;
+  opacity: 0.86;
+}
+
+/* 恢复连接后补写的一笔「续」 */
+.led-resume {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 24px;
+}
+.led-resume-mark {
+  padding: 0 3px;
+  border: 1px solid var(--state-approval);
+  font-family: var(--font-display);
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--state-approval);
+  transform: rotate(-3deg);
+}
+
+/* 新墨浮标：用户上滚阅读时的路标，不抢滚动 */
+.led-new {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  z-index: 2;
+  padding: 3px 8px;
+  border: 1px solid var(--ink-line-strong);
+  border-radius: 2px;
+  background: rgba(8, 11, 17, 0.94);
+  font-family: var(--font-body);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--gold-200);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+.led-new:hover,
+.led-new:focus-visible {
+  color: var(--gold-100);
+  border-color: var(--gold-400);
+}
+
+/* aria-live 区留在 DOM 里但不可见 */
+.led-live {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@keyframes xj-error-wash {
+  0% {
+    background: rgba(196, 85, 61, 0.16);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+/* ── 宽屏：行高 32px，正文更舒展 ──────────────────────────── */
+@media (min-width: 1440px) {
+  .led {
+    --led-row-h: 32px;
+    width: clamp(420px, 36vw, 560px);
+  }
+  .led-row {
+    grid-template-columns: 64px max-content minmax(0, 1fr) auto 33px 11px;
+  }
+  .led-title-main {
+    font-size: 17px;
+  }
+  .led-text {
+    font-size: 13.5px;
+  }
+}
+
+/* ── 移动端 ≤720px：《起居注》变底部抽屉 ──────────────────── */
+@media (max-width: 720px) {
+  .led {
+    --led-row-h: 26px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: auto;
+    max-height: 70vh;
+    min-height: 0;
+    padding: 0 14px calc(8px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--ink-line-strong);
+    background: linear-gradient(
+      to top,
+      rgba(4, 6, 10, 0.98) 0%,
+      rgba(4, 6, 10, 0.94) 62%,
+      rgba(4, 6, 10, 0.78) 100%
+    );
+    transition: max-height var(--dur-slow) var(--ease-out);
+  }
+  .led::before {
+    display: none;
+  }
+  .led[data-open='true'] {
+    max-height: 70vh;
+  }
+
+  /* 把手：一根金线，上滑展开 / 下滑收起 */
+  .led-grip {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 16px;
+    padding: 0;
+  }
+  .led-grip::before {
+    content: '';
+    width: 34px;
+    height: 2px;
+    background: var(--gold-400);
+    opacity: 0.75;
+  }
+  .led-head {
+    height: 40px;
+    padding-top: 12px;
+  }
+  .led-vertical {
+    width: 15px;
+    height: 25px;
+    font-size: 9px;
+  }
+  .led-title-main {
+    font-size: 15px;
+  }
+  .led-title-sub {
+    display: none;
+  }
+  .led-vol {
+    display: none;
+  }
+  .led-offline {
+    margin-top: 2px;
+  }
+  .led-body {
+    max-height: 58px;
+    padding: 0 0 6px;
+    transition: max-height var(--dur-slow) var(--ease-out);
+  }
+  .led[data-open='true'] .led-body {
+    max-height: calc(70vh - 92px);
+  }
+  .led-row {
+    grid-template-columns: auto max-content minmax(0, 1fr) auto 33px 11px;
+    column-gap: 7px;
+  }
+  .led-star {
+    gap: 4px;
+  }
+  .led-time {
+    font-size: 11.5px;
+  }
+  .led-text {
+    font-size: 12.5px;
+  }
+  .led-meta {
+    font-size: 11px;
+  }
+  .led-new {
+    bottom: 6px;
+    right: 4px;
+    min-height: 32px;
+  }
+}
+
+@media (max-width: 480px) {
+  .led-row {
+    grid-template-columns: auto minmax(0, 1fr) auto 11px;
+  }
+  .led-star,
+  .led-meta {
+    display: none;
+  }
+  .led-empty {
+    padding: 10px 2px;
+  }
+  .led-empty-sub {
+    display: none;
+  }
+}
+
+/* ── reduced motion：无落墨、无盖章动画，只做 200ms 淡切 ────── */
+.xj-hud[data-reduced='true'] .led-row,
+.xj-hud[data-reduced='true'] .led-row.is-fresh {
+  animation: none;
+}
+.xj-hud[data-reduced='true'] .led-seal {
+  transition: opacity 200ms linear;
+  transform: none;
+}
+.xj-hud[data-reduced='true'] .led-seal.is-stamped {
+  transform: none;
+}
+.xj-hud[data-reduced='true'] .led-pulse {
+  animation: none;
+}
+.xj-hud[data-reduced='true'] .led {
+  transition: none;
+}
+.xj-hud[data-reduced='true'] .led-body {
+  transition: none;
+}

@@ -1,0 +1,103 @@
+/* XUANJI · 璇玑 — design tokens（最终值，v1.0）
+ * 权威来源：docs/DESIGN-BIBLE.md §3 色彩系统 / §4 字体 / §11 动效。
+ * 与 src/design/tokens.ts 保持同步（canvas 读 TS，DOM 读 CSS）。改色两处一起改。
+ * 纪律：无圆角卡片、无毛玻璃、无大面积高饱和；五行色只用于「动作」，面积 <8%。
+ */
+
+:root {
+  /* ---- 墨（背景层次） ---- */
+  --ink-void: #05070b;
+  --ink-deep: #0a0d14;
+  --ink-raise: rgba(14, 17, 25, 0.86);
+  --ink-veil: rgba(5, 7, 11, 0.62);
+  --ink-panel: rgba(10, 13, 20, 0.72);
+  --ink-line: rgba(200, 182, 142, 0.16);
+  --ink-line-strong: rgba(200, 182, 142, 0.34);
+
+  /* ---- 鎏金（主强调） ---- */
+  --gold-100: #f4e3bc;
+  --gold-200: #e8c878;
+  --gold-300: #d8b26a;
+  --gold-400: #a8823f;
+  --gold-500: #6f5527;
+  --gold-glow: rgba(232, 200, 120, 0.55);
+
+  /* ---- 铜锈（仪器旧铜） ---- */
+  --patina-300: #7fae98;
+  --patina-500: #3f5f53;
+
+  /* ---- 骨白（文字） ---- */
+  --bone-100: #ede6d4;
+  --bone-200: #d3cbb6;
+  --bone-300: #b3ab98;
+  --bone-400: #8b8474;
+  --bone-500: #5f5a4f;
+
+  /* ---- 状态（颜色 + 形状双编码） ---- */
+  --state-live: #e8c878;
+  --state-idle: #b3ab98;
+  --state-ended: #5f5a4f;
+  --state-error: #c4553d;
+  --state-approval: #7fbf9e;
+
+  /* ---- 五行（器用，唯一允许的高饱和区） ---- */
+  --cat-read: #5e9c7e; /* 木 · 读取 */
+  --cat-write: #c0532f; /* 火 · 书写 */
+  --cat-exec: #b98a4e; /* 土 · 执行 */
+  --cat-net: #4e6e8e; /* 水 · 通问 */
+  --cat-agent: #c9bfa6; /* 金 · 遣使 */
+
+  /* ---- 冷色（只用于星野远景与「失联」） ---- */
+  --cold-300: #8fa0b8;
+  --indigo-400: #6c7fa0;
+
+  /* ---- 语义别名 ---- */
+  --fg: var(--bone-100);
+  --fg-dim: var(--bone-300);
+  --fg-faint: var(--bone-400);
+  --accent: var(--gold-300);
+  --hairline: 1px;
+  --radius-s: 2px;
+  --radius-m: 2px;
+
+  /* ---- 字体（加载见 design/fonts.css） ---- */
+  --font-display: 'Xuanji Display', 'LXGW WenKai', 'Noto Serif SC', 'Songti SC', serif;
+  --font-body: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Mono', 'Consolas', monospace;
+  --font-ui: 'JetBrains Mono', 'Cascadia Mono', 'Microsoft YaHei UI', sans-serif;
+
+  /* ---- 层级 ---- */
+  --z-scene: 0;
+  --z-hud: 10;
+  --z-panel: 20;
+  --z-overlay: 30;
+  --z-boot: 40;
+  --z-toast: 50;
+
+  /* ---- 动效 tokens（BIBLE §11） ---- */
+  --dur-instant: 90ms;
+  --dur-fast: 180ms;
+  --dur-mid: 320ms;
+  --dur-slow: 620ms;
+  --dur-cinematic: 1100ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-engrave: cubic-bezier(0.22, 0.9, 0.24, 1);
+
+  /* ---- 材质 ---- */
+  --grain-opacity: 0.05;
+  --vignette-strength: 0.45;
+  --text-shadow-glow: 0 0 18px rgba(232, 200, 120, 0.28);
+
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-instant: 1ms;
+    --dur-fast: 1ms;
+    --dur-mid: 1ms;
+    --dur-slow: 1ms;
+    --dur-cinematic: 1ms;
+  }
+}

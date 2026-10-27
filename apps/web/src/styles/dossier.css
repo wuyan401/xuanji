@@ -1,0 +1,955 @@
+/* XUANJI · 璇玑 — 星牒（右侧 320px 档案面板）
+   材质：近处=骨白纸文字 + ink-deep 底，像档案页而非玻璃卡片；卷轴展开＝宽 0→320 + 内容落墨。
+   §17.3 档案行：无竖线、无斑马纹、行间 1px ink-line、数字列等宽右对齐。 */
+
+.ds-wrap {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-panel);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+/* 收起的页签：右侧白边上的竖排「星牒」 */
+.ds-tab {
+  position: absolute;
+  top: 46%;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 6px 13px 8px;
+  border: 1px solid var(--ink-line);
+  border-right: 0;
+  border-radius: 2px 0 0 2px;
+  background: linear-gradient(90deg, rgba(6, 9, 14, 0.45), rgba(10, 13, 20, 0.94));
+  pointer-events: auto;
+  transform: translateY(-50%);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+.ds-tab:hover,
+.ds-tab:focus-visible {
+  border-color: var(--ink-line-strong);
+  background: rgba(10, 13, 20, 0.98);
+}
+.ds-tab-text {
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  font-family: var(--font-display);
+  font-size: 12.5px;
+  line-height: 1;
+  letter-spacing: 0.32em;
+  color: var(--gold-200);
+}
+.ds-tab:hover .ds-tab-text {
+  color: var(--gold-100);
+}
+.ds-tab-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 2px;
+  border: 1px solid var(--state-error);
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 9.5px;
+  line-height: 1;
+  color: var(--state-error);
+}
+
+/* 面板：垂直居中偏上，卷轴展开 */
+.dossier {
+  position: absolute;
+  top: 46%;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  width: 0;
+  height: min(76vh, 680px);
+  overflow: hidden;
+  border-left: 1px solid var(--ink-line-strong);
+  background: linear-gradient(180deg, rgba(11, 14, 21, 0.97), rgba(8, 11, 17, 0.97));
+  transform: translateY(-50%);
+  pointer-events: auto;
+  transition: width var(--dur-slow) var(--ease-out);
+}
+.dossier[data-open='true'] {
+  width: 320px;
+}
+.dossier > * {
+  width: 320px;
+  flex: 0 0 auto;
+}
+
+.ds-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 56px;
+  padding: 0 6px 0 16px;
+  border-bottom: 1px solid var(--ink-line-strong);
+  opacity: 1;
+}
+
+.ds-stamp {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 29px;
+  padding: 2px 0;
+  border: 1px solid rgba(168, 130, 63, 0.55);
+  border-radius: 1px;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  line-height: 1.1;
+  letter-spacing: 0.06em;
+  color: var(--gold-300);
+}
+
+.ds-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.ds-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0.24em;
+  color: var(--bone-100);
+}
+.ds-sub {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.3;
+  letter-spacing: 0.06em;
+  color: var(--bone-500);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ds-head .xj-close {
+  margin-left: auto;
+}
+
+.ds-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 18px 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* 卷轴展开：内容自上而下「落墨」 */
+.dossier .ds-head,
+.dossier .ds-scroll {
+  opacity: 0;
+  clip-path: inset(0 0 100% 0);
+}
+.dossier.is-unrolled .ds-head {
+  opacity: 1;
+  clip-path: inset(0);
+  transition:
+    opacity 220ms linear 90ms,
+    clip-path 320ms var(--ease-engrave) 90ms;
+}
+.dossier.is-unrolled .ds-scroll {
+  opacity: 1;
+  clip-path: inset(0);
+  transition:
+    opacity 260ms linear 150ms,
+    clip-path 420ms var(--ease-engrave) 130ms;
+}
+
+/* ── 小节标题 ─────────────────────────────────────────────── */
+.ds-sec-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 18px 0 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--ink-line);
+}
+.ds-overview > .ds-sec-title:first-child {
+  margin-top: 14px;
+}
+.ds-sec-title h3 {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0.18em;
+  color: var(--bone-200);
+}
+.ds-sec-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--bone-500);
+}
+
+/* ── 档案行（键值表） ─────────────────────────────────────── */
+.ds-table {
+  display: flex;
+  flex-direction: column;
+}
+.ds-row {
+  display: grid;
+  grid-template-columns: 5.4em minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 10px;
+  min-height: 28px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--ink-line);
+}
+.ds-row:last-child {
+  border-bottom-color: transparent;
+}
+.ds-row dt {
+  overflow: hidden;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--bone-400);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ds-row dd {
+  min-width: 0;
+  text-align: left;
+}
+.ds-value {
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+  color: var(--bone-200);
+  word-break: break-word;
+}
+.ds-value.is-mono {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
+  color: var(--bone-100);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ds-value.is-wide {
+  text-align: left;
+  white-space: normal;
+}
+.ds-row--bar {
+  align-items: center;
+}
+.ds-row--bar dt {
+  align-self: center;
+}
+.ds-bar-cell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.ds-bar {
+  position: relative;
+  display: block;
+  flex: 1 1 auto;
+  max-width: 86px;
+  height: 2px;
+  background: var(--ink-line-strong);
+}
+.ds-bar-fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--gold-500), var(--gold-300));
+  transition: width var(--dur-mid) var(--ease-out);
+}
+.ds-cheng {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  color: var(--gold-200);
+  white-space: nowrap;
+}
+
+/* ── 器用五色图例（34×34 chip，单字 16px） ────────────────── */
+.ds-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 2px 0 4px;
+}
+.ds-leg {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+.ds-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--ink-line-strong);
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.015);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--bone-300);
+}
+.ds-chip[data-cat='read'] {
+  color: var(--cat-read);
+  border-color: color-mix(in srgb, var(--cat-read) 52%, transparent);
+}
+.ds-chip[data-cat='write'] {
+  color: var(--cat-write);
+  border-color: color-mix(in srgb, var(--cat-write) 52%, transparent);
+}
+.ds-chip[data-cat='exec'] {
+  color: var(--cat-exec);
+  border-color: color-mix(in srgb, var(--cat-exec) 52%, transparent);
+}
+.ds-chip[data-cat='net'] {
+  color: var(--cat-net);
+  border-color: color-mix(in srgb, var(--cat-net) 52%, transparent);
+}
+.ds-chip[data-cat='agent'] {
+  color: var(--cat-agent);
+  border-color: color-mix(in srgb, var(--cat-agent) 52%, transparent);
+}
+.ds-leg-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--bone-400);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 最近误 ────────────────────────────────────────────────── */
+.ds-errors {
+  display: flex;
+  flex-direction: column;
+}
+.ds-error {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  column-gap: 8px;
+  width: 100%;
+  padding: 6px 2px;
+  border-bottom: 1px solid var(--ink-line);
+  text-align: left;
+}
+.ds-error:hover {
+  background: linear-gradient(90deg, rgba(196, 85, 61, 0.07), transparent 80%);
+}
+.ds-error:last-child {
+  border-bottom-color: transparent;
+}
+.ds-error-time {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: var(--bone-500);
+  font-variant-numeric: tabular-nums;
+}
+.ds-error-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.ds-error-star {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--bone-200);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ds-error-star::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 4px;
+  height: 4px;
+  background: var(--state-error);
+  transform: rotate(45deg);
+}
+.ds-error-text {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--bone-400);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ds-empty {
+  padding: 8px 2px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--bone-500);
+}
+
+/* ── 详情：星之档案 ────────────────────────────────────────── */
+.ds-star-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  margin-bottom: 2px;
+  padding: 14px 0 10px;
+  border-bottom: 1px solid var(--ink-line-strong);
+}
+.ds-star-domain {
+  font-family: var(--font-display);
+  font-size: 11.5px;
+  letter-spacing: 0.2em;
+  color: var(--gold-300);
+}
+.ds-star-title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: 0.06em;
+  color: var(--bone-100);
+}
+.ds-star-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  padding: 1px 7px;
+  border: 1px solid currentColor;
+  border-radius: 1px;
+  font-size: 11.5px;
+  letter-spacing: 0.12em;
+  color: var(--bone-300);
+}
+.ds-star-state::before {
+  content: '';
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.ds-star-state[data-state='live'] {
+  color: var(--state-live);
+}
+.ds-star-state[data-state='idle'] {
+  color: var(--bone-300);
+}
+.ds-star-state[data-state='ended'] {
+  color: var(--bone-500);
+}
+
+.ds-run {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  color: var(--gold-200);
+  font-variant-numeric: tabular-nums;
+}
+
+.ds-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ds-list-item {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--bone-300);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ds-list-item::before {
+  content: '· ';
+  color: var(--gold-500);
+}
+
+.ds-todos {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ds-todo {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--bone-300);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ds-todo.is-done {
+  color: var(--bone-500);
+}
+
+.ds-quote {
+  display: block;
+  padding-left: 9px;
+  border-left: 1px solid var(--ink-line-strong);
+  font-size: 12px;
+  line-height: 1.65;
+  letter-spacing: 0.01em;
+  color: var(--bone-300);
+  white-space: normal;
+}
+
+/* ── 移动端 ≤720px：底部 sheet ─────────────────────────────── */
+@media (max-width: 720px) {
+  .dossier {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 0;
+    max-height: 82vh;
+    border-left: 0;
+    border-top: 1px solid var(--ink-line-strong);
+    /* 手机 sheet 是「档案页」而非半透浮层：避免背后账本文字透上来 */
+    background: #090c12;
+    transform: none;
+    transition: height var(--dur-slow) var(--ease-out);
+  }
+  .dossier[data-open='true'] {
+    width: 100%;
+    height: min(78vh, 640px);
+  }
+  .dossier > * {
+    width: 100%;
+  }
+  .ds-head {
+    height: 54px;
+    padding: 0 8px 0 16px;
+  }
+  .ds-scroll {
+    padding: 0 16px calc(20px + env(safe-area-inset-bottom));
+  }
+  .ds-tab {
+    top: auto;
+    bottom: 148px;
+    padding: 11px 5px 11px 7px;
+    transform: none;
+  }
+  .ds-star-title {
+    font-size: 17px;
+  }
+}
+
+/* ── reduced motion ───────────────────────────────────────── */
+.xj-hud[data-reduced='true'] .dossier {
+  transition: none;
+}
+.xj-hud[data-reduced='true'] .dossier .ds-head,
+.xj-hud[data-reduced='true'] .dossier .ds-scroll {
+  clip-path: none;
+  opacity: 1;
+  transition: none;
+}
+.xj-hud[data-reduced='true'] .ds-bar-fill {
+  transition: none;
+}
+
+/* ══ v1.2 分野总览（本机所有 workspace 一律可见） ═══════════════
+   档案行纪律（§17.3）：无竖线、无斑马纹、每行不卡片化；行间 1px ink-line；
+   时间/数字列等宽 tabular；行高 28px（≥1440 32px，≤720 32px 保持可点）。 */
+.ds-meta {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.3;
+  letter-spacing: 0.04em;
+  color: var(--bone-500);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ds-sec-note {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--bone-500);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ds-sectors {
+  display: flex;
+  flex-direction: column;
+}
+
+.ds-sector {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  width: 100%;
+  min-height: 32px;
+  padding: 2px 2px;
+  border-bottom: 1px solid var(--ink-line);
+  border-radius: 0;
+  background: none;
+  text-align: left;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.ds-sector:last-child {
+  border-bottom-color: transparent;
+}
+.ds-sector:hover {
+  background: linear-gradient(90deg, rgba(232, 200, 120, 0.055), transparent 84%);
+}
+.ds-sector:focus-visible {
+  outline: 2px solid var(--gold-300);
+  outline-offset: 1px;
+}
+/* 选中的分野：左侧 1px 金线（不是卡片，只是书页上的折角） */
+.ds-sector[aria-pressed='true'] {
+  background: linear-gradient(90deg, rgba(232, 200, 120, 0.09), transparent 88%);
+  box-shadow: inset 2px 0 0 var(--gold-400);
+}
+
+/* 未在行的分野整体降一档，行内仍有活气（§17.3 归档降饱和的轻量版） */
+.ds-sector[data-live='false'] {
+  opacity: 0.8;
+}
+.ds-sector[data-live='false']:hover,
+.ds-sector[data-live='false']:focus-visible,
+.ds-sector[data-live='false'][aria-pressed='true'] {
+  opacity: 1;
+}
+
+.ds-sector-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  min-height: 13px;
+  line-height: 1.1;
+}
+.ds-sector-line--data {
+  gap: 8px;
+}
+
+.ds-sector-dot {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(200, 182, 142, 0.32);
+  box-shadow: 0 0 0 1px rgba(200, 182, 142, 0.18);
+}
+.ds-sector[data-live='true'] .ds-sector-dot {
+  background: var(--state-live);
+  box-shadow: 0 0 0 1px rgba(232, 200, 120, 0.4);
+  animation: ds-live-breathe 2.6s var(--ease-in-out) infinite;
+}
+/* live 分野行首：1px 金线呼吸（与圆点同拍） */
+.ds-sector[data-live='true']::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  width: 1px;
+  background: var(--gold-300);
+  opacity: 0.55;
+  animation: ds-live-line 2.6s var(--ease-in-out) infinite;
+}
+
+.ds-sector-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.02;
+  letter-spacing: 0.02em;
+  color: var(--bone-200);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ds-sector[aria-pressed='true'] .ds-sector-name {
+  color: var(--gold-200);
+}
+.ds-sector-suffix {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-style: normal;
+  letter-spacing: 0.02em;
+  color: var(--bone-500);
+  white-space: nowrap;
+}
+.ds-sector-recent {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  color: var(--bone-500);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ds-sector-counts {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.05;
+  letter-spacing: 0;
+  color: var(--bone-400);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ds-sector-rate {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.05;
+  letter-spacing: 0;
+  color: var(--bone-500);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ds-sector-top2 {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ds-sector-tool {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  color: var(--bone-500);
+}
+.ds-sector-tool b {
+  font-weight: 400;
+  color: var(--bone-500);
+}
+.ds-sector-tool.is-none {
+  color: var(--bone-500);
+}
+.ds-sector-mark {
+  font-style: normal;
+  line-height: 1;
+}
+.ds-sector-tool[data-cat='read'] .ds-sector-mark {
+  color: var(--cat-read);
+}
+.ds-sector-tool[data-cat='write'] .ds-sector-mark {
+  color: var(--cat-write);
+}
+.ds-sector-tool[data-cat='exec'] .ds-sector-mark {
+  color: var(--cat-exec);
+}
+.ds-sector-tool[data-cat='net'] .ds-sector-mark {
+  color: var(--cat-net);
+}
+.ds-sector-tool[data-cat='agent'] .ds-sector-mark {
+  color: var(--cat-agent);
+}
+
+/* 24 格器用 mini 条：每格 2×8px，按器用占比上色 */
+.ds-sector-bar[hidden] {
+  display: none;
+}
+.ds-sector-bar {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: flex-end;
+  gap: 1px;
+  height: 8px;
+  margin-left: auto;
+}
+.ds-sector-cell {
+  width: 2px;
+  height: 8px;
+  background: transparent;
+}
+.ds-sector-cell.is-read {
+  background: color-mix(in srgb, var(--cat-read) 62%, transparent);
+}
+.ds-sector-cell.is-write {
+  background: color-mix(in srgb, var(--cat-write) 62%, transparent);
+}
+.ds-sector-cell.is-exec {
+  background: color-mix(in srgb, var(--cat-exec) 62%, transparent);
+}
+.ds-sector-cell.is-net {
+  background: color-mix(in srgb, var(--cat-net) 62%, transparent);
+}
+.ds-sector-cell.is-agent {
+  background: color-mix(in srgb, var(--cat-agent) 62%, transparent);
+}
+
+/* 返回行：从星之档案回到分野总览 */
+.ds-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  align-self: flex-start;
+  min-height: 26px;
+  margin: 10px 0 0;
+  padding: 0 2px;
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  color: var(--bone-400);
+}
+.ds-back:hover,
+.ds-back:focus-visible {
+  color: var(--gold-200);
+}
+.ds-back-arrow {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--gold-400);
+}
+.ds-detail > .ds-back + .ds-star-head {
+  padding-top: 6px;
+}
+
+/* 最近器用：mono 小表，时间左、耗时右对齐 */
+.ds-tools {
+  display: flex;
+  flex-direction: column;
+}
+.ds-tool-row {
+  display: grid;
+  grid-template-columns: 52px 12px minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 7px;
+  min-height: 26px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--ink-line);
+}
+.ds-tool-row:last-child {
+  border-bottom-color: transparent;
+}
+.ds-tool-time {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: var(--bone-500);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ds-tool-mark {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--bone-400);
+  text-align: center;
+}
+.ds-tool-mark[data-cat='read'] {
+  color: var(--cat-read);
+}
+.ds-tool-mark[data-cat='write'] {
+  color: var(--cat-write);
+}
+.ds-tool-mark[data-cat='exec'] {
+  color: var(--cat-exec);
+}
+.ds-tool-mark[data-cat='net'] {
+  color: var(--cat-net);
+}
+.ds-tool-mark[data-cat='agent'] {
+  color: var(--cat-agent);
+}
+.ds-tool-name {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  color: var(--bone-200);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ds-tool-dur {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.01em;
+  color: var(--bone-300);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+@keyframes ds-live-breathe {
+  0%,
+  100% {
+    opacity: 0.62;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes ds-live-line {
+  0%,
+  100% {
+    opacity: 0.22;
+  }
+  50% {
+    opacity: 0.72;
+  }
+}
+
+/* 宽屏：行高 32px（§17.3） */
+@media (min-width: 1440px) {
+  .ds-sector {
+    min-height: 32px;
+    padding-block: 2px;
+  }
+  .ds-row {
+    min-height: 32px;
+  }
+}
+
+@media (max-width: 720px) {
+  .ds-sector {
+    min-height: 40px;
+    padding-block: 4px;
+  }
+  /* 触摸目标贴近 40px 的下限：行内两行文字撑开，整行可点 */
+  .ds-sector-line {
+    gap: 8px;
+  }
+  .ds-tool-row {
+    min-height: 28px;
+  }
+}
+
+.xj-hud[data-reduced='true'] .ds-sector[data-live='true'] .ds-sector-dot,
+.xj-hud[data-reduced='true'] .ds-sector[data-live='true']::before {
+  animation: none;
+}
+

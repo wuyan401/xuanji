@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN" data-hud="on">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#04060a" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="璇玑 · 本机智能体观测所 — 实时观测本机所有正在运行的智能体。"
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2305070b'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%23e8c878' stroke-width='1.4'/%3E%3Ccircle cx='16' cy='16' r='5.5' fill='none' stroke='%23a8823f' stroke-width='1'/%3E%3Ccircle cx='16' cy='16' r='1.6' fill='%23f4e3bc'/%3E%3C/svg%3E"
+    />
+    <title>璇玑 · 本机智能体观测所</title>
+    <style>
+      /* 首屏防闪白：所有正式样式由 HUD 模块引入 */
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #04060a;
+        overscroll-behavior: none;
+      }
+      #app {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+      }
+      #stage {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+      }
+      #stage canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      #hud {
+        position: absolute;
+        inset: 0;
+        z-index: 10;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="stage" role="img" aria-label="浑仪星图：本机智能体的实时位置与状态"></div>
+      <div id="hud"></div>
+    </div>
+    <noscript>璇玑需要启用 JavaScript 才能观测本机智能体。</noscript>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

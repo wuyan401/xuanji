@@ -1,0 +1,44 @@
+{
+  "name": "xuanji",
+  "version": "2.4.3",
+  "private": true,
+  "type": "module",
+  "description": "璇玑 XUANJI —— 本机全 Agent 实时观测台：把 DSH / Hermes / opencode / Claude Code / Codex 与整机运行数据，画成一台会走动的古代星象仪",
+  "keywords": [
+    "observatory",
+    "ai-agents",
+    "visualization",
+    "canvas",
+    "local-first",
+    "deepseek-harness",
+    "hermes",
+    "opencode",
+    "claude-code",
+    "codex",
+    "telemetry",
+    "creative-coding"
+  ],
+  "license": "MIT",
+  "author": "wuyan401",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wuyan401/xuanji.git"
+  },
+  "homepage": "https://github.com/wuyan401/xuanji#readme",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "node tools/dev.mjs",
+    "dev:server": "node --watch apps/server/src/server.mjs",
+    "dev:web": "pnpm -C apps/web dev",
+    "build": "pnpm -C apps/web build",
+    "start": "node apps/server/src/server.mjs",
+    "start:demo": "node apps/server/src/server.mjs --demo",
+    "preview": "pnpm build && node apps/server/src/server.mjs",
+    "test": "node --test apps/server/tests/smoke.mjs apps/server/tests/v2.test.mjs",
+    "typecheck": "pnpm -C apps/web typecheck",
+    "verify:data": "node tools/verify-data.mjs",
+    "verify:ui": "node tools/qa-check.mjs"
+  }
+}

@@ -1,0 +1,198 @@
+/* XUANJI · 璇玑 — v2.3 双主题：HUD 侧主题语法
+ * 权威：DESIGN-BIBLE §22.7。只换材质与色相，不改信息结构、不动布局、不加新面板。
+ * 纪律：主题铭牌柔和；科幻语法克制（扫描线 alpha ≤0.08、刻度列 4–6 根 2px 短竖线）；
+ *       禁止霓虹紫大面积、全屏网格、glitch、游戏 logo/字标/图形。
+ * 主题变量由 design/themes.css 在 <html data-theme> 上覆盖，HUD 只消费，不写 data-theme/localStorage。
+ */
+
+/* ── 1. 顶栏主题铭牌「璇玑 / 深空」 ───────────────────────────── */
+.tb-theme {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 2px;
+  pointer-events: auto;
+}
+
+/* v2.0 视图铭牌同样需要可点（.top-region 是 pointer-events:none） */
+.tb-view {
+  pointer-events: auto;
+}
+
+.tb-theme-btn {
+  appearance: none;
+  margin: 0;
+  padding: 2px 6px;
+  min-height: 22px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-s, 2px);
+  background: transparent;
+  color: var(--bone-400);
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+
+.tb-theme-btn:hover {
+  color: var(--bone-100);
+}
+
+.tb-theme-btn[aria-pressed='true'] {
+  color: var(--gold-200);
+  border-color: var(--ink-line);
+}
+
+.tb-theme-btn:focus-visible {
+  outline: 2px solid var(--gold-300);
+  outline-offset: 3px;
+}
+
+/* scifi：主题铭牌用信号青强调 */
+:root[data-theme='scifi'] .tb-theme-btn[aria-pressed='true'] {
+  color: var(--theme-signal);
+  border-color: color-mix(in srgb, var(--theme-signal) 42%, transparent);
+}
+
+/* 视图铭牌在 scifi 也用信号青下划线（保留原 1px 金线语法，只换色相） */
+:root[data-theme='scifi'] .tb-view[aria-pressed='true'] {
+  color: var(--theme-signal);
+  border-bottom-color: var(--theme-signal);
+}
+
+/* ── 2. scifi 顶栏 6s 扫描线（1px，仅主题内；reduced-motion 关） ── */
+.tb {
+  position: relative;
+}
+
+.tb-scan {
+  display: none;
+}
+
+:root[data-theme='scifi'] .tb {
+  overflow: hidden;
+}
+
+:root[data-theme='scifi'] .tb-scan {
+  display: block;
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: var(--theme-scanline);
+  box-shadow: 0 0 6px var(--theme-scanline);
+  opacity: 0;
+  pointer-events: none;
+  animation: xj-tb-scan 6s linear infinite;
+}
+
+@keyframes xj-tb-scan {
+  0% {
+    transform: translateY(0);
+    opacity: 0.9;
+  }
+  4% {
+    opacity: 0.6;
+  }
+  55% {
+    opacity: 0.32;
+  }
+  100% {
+    transform: translateY(55px);
+    opacity: 0;
+  }
+}
+
+.xj-hud[data-reduced='true'] .tb-scan {
+  display: none !important;
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tb-scan {
+    display: none !important;
+    animation: none !important;
+  }
+}
+
+/* ── 3. 主题切换：320ms 交叉淡入（只动 opacity，禁位移、不动布局） ── */
+@keyframes xj-theme-in {
+  from {
+    opacity: 0.58;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.xj-hud.is-theme-in {
+  animation: xj-theme-in 320ms var(--ease-out) both;
+}
+
+.xj-hud[data-reduced='true'].is-theme-in {
+  animation-duration: 160ms;
+}
+
+/* ── 4. 面板标题小刻度列（scifi only：4–6 根 2px 短竖线） ───── */
+:root[data-theme='scifi'] .sys-title::after,
+:root[data-theme='scifi'] .pr-title::after,
+:root[data-theme='scifi'] .ds-title::after,
+:root[data-theme='scifi'] .led-title-main::after {
+  content: '';
+  display: inline-block;
+  width: 24px;
+  height: 8px;
+  margin-left: 10px;
+  vertical-align: middle;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--theme-signal) 0 2px,
+    transparent 2px 6px
+  );
+  opacity: 0.5;
+}
+
+/* ── 5. 《机枢》《器录》行 hover：1px 线（scifi 青 / xuanji 金，随主题变量） ── */
+.sys-row,
+.pr-row {
+  transition: box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.sys-row:hover,
+.sys-row:focus-within,
+.pr-row:hover,
+.pr-row:focus-visible {
+  box-shadow: inset 0 -1px 0 var(--ink-line-strong);
+}
+
+:root[data-theme='scifi'] .sys-row:hover,
+:root[data-theme='scifi'] .sys-row:focus-within,
+:root[data-theme='scifi'] .pr-row:hover,
+:root[data-theme='scifi'] .pr-row:focus-visible {
+  box-shadow: inset 0 -1px 0 var(--theme-signal);
+}
+
+/* ── 6. 帮助卷宗：双主题说明行 ─────────────────────────────── */
+.hp-concept--theme {
+  margin-top: -6px;
+  color: var(--bone-400);
+}
+
+/* ── 7. 移动端：主题铭牌折叠为只留当前一枚 ─────────────────── */
+@media (max-width: 720px) {
+  .tb-theme {
+    margin-right: 0;
+  }
+
+  .tb-theme-btn {
+    padding: 2px 5px;
+    font-size: 11px;
+    min-height: 20px;
+  }
+
+  .tb-theme-btn:not([aria-pressed='true']) {
+    display: none;
+  }
+}

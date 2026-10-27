@@ -1,0 +1,22 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+apps/web/dist/
+
+# local QA evidence & research assets (screenshots may contain private channel titles)
+docs/qa/
+docs/research/assets/
+docs/screenshots/
+docs/images/_raw/
+
+# local/dev scratch
+*.log
+.probe/
+tools/_*.mjs
+.env
+.env.*
+.DS_Store
+Thumbs.db

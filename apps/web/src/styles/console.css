@@ -1,0 +1,444 @@
+/* XUANJI · 璇玑 — 调参台（右侧仪轨面板 · §17.6）
+   材质：近处=骨白纸文字 + ink-deep 底；分组标题用胶囊（20px / 11px / +0.05em / 999px / gold@8%）。
+   滑杆不用浏览器默认外观：1px 基线 + 毫米刻度 + 方形铜钮。 */
+
+.cs-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-overlay) - 1);
+  background: rgba(3, 5, 9, 0.58);
+  opacity: 0;
+  pointer-events: auto;
+  transition: opacity var(--dur-mid) linear;
+}
+.cs-backdrop.is-in {
+  opacity: 1;
+}
+
+.cs {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-overlay);
+  display: flex;
+  flex-direction: column;
+  width: min(420px, calc(100vw - 40px));
+  border-left: 1px solid var(--ink-line-strong);
+  background: linear-gradient(180deg, rgba(12, 15, 23, 0.985), rgba(8, 11, 17, 0.985));
+  clip-path: inset(0 0 0 100%);
+  pointer-events: auto;
+  transition: clip-path var(--dur-slow) var(--ease-engrave);
+}
+.cs.is-in {
+  clip-path: inset(0);
+}
+
+/* ── 页头 ─────────────────────────────────────────────────── */
+.cs-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  height: 60px;
+  padding: 0 6px 0 20px;
+  border-bottom: 1px solid var(--ink-line-strong);
+}
+.cs-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cs-title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0.26em;
+  color: var(--bone-100);
+}
+.cs-sub {
+  font-size: 11.5px;
+  line-height: 1.1;
+  letter-spacing: 0.16em;
+  color: var(--bone-500);
+}
+.cs-head .xj-close {
+  margin-left: auto;
+}
+
+/* ── 预设：五枚仪轨 ───────────────────────────────────────── */
+.cs-presets {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px 20px 13px;
+  border-bottom: 1px solid var(--ink-line);
+}
+.cs-preset {
+  padding: 5px 9px;
+  border: 1px solid var(--ink-line);
+  border-radius: 2px;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  color: var(--bone-300);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+.cs-preset:hover,
+.cs-preset:focus-visible {
+  border-color: var(--ink-line-strong);
+  color: var(--gold-200);
+}
+.cs-preset.is-active {
+  border-color: var(--gold-400);
+  background: rgba(232, 200, 120, 0.06);
+  color: var(--gold-100);
+}
+
+/* ── 滑杆区 ───────────────────────────────────────────────── */
+.cs-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 2px 20px 18px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.cs-group {
+  margin-top: 15px;
+}
+.cs-group:first-child {
+  margin-top: 8px;
+}
+.cs-group-title {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  margin: 0 0 3px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(232, 200, 120, 0.08);
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.05em;
+  color: var(--gold-200);
+}
+
+.cs-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) 44px;
+  align-items: center;
+  column-gap: 10px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--ink-line);
+}
+.cs-group .cs-row:last-child {
+  border-bottom-color: transparent;
+}
+/* v2.1：带 hint 的参数（自动运镜）在行下加一行小注 */
+.cs-item {
+  display: block;
+}
+.cs-item:last-child .cs-row {
+  border-bottom-color: transparent;
+}
+.cs-row-note {
+  display: block;
+  margin: -2px 0 6px;
+  padding-left: 102px;
+  font-size: 10.5px;
+  letter-spacing: 0.03em;
+  color: var(--bone-500);
+}
+@media (max-width: 720px) {
+  .cs-row-note {
+    padding-left: 92px;
+    margin-bottom: 8px;
+  }
+}
+.cs-row-label {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  color: var(--bone-300);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.cs-row-track {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.cs-row-out {
+  display: flex;
+  justify-content: flex-end;
+}
+.cs-value {
+  width: 44px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  color: var(--gold-200);
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 自定义 range：铜钮在刻度尺上走 ───────────────────────── */
+.cs-range {
+  width: 100%;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.cs-range::-webkit-slider-runnable-track {
+  height: 9px;
+  border: 0;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(200, 182, 142, 0.2) 0 1px,
+      transparent 1px 9px
+    )
+    center bottom / 100% 4px no-repeat,
+    linear-gradient(var(--ink-line), var(--ink-line)) center center / 100% 1px no-repeat;
+}
+.cs-range::-moz-range-track {
+  height: 9px;
+  border: 0;
+  background:
+    repeating-linear-gradient(90deg, rgba(200, 182, 142, 0.2) 0 1px, transparent 1px 9px)
+      center bottom / 100% 4px no-repeat,
+    linear-gradient(var(--ink-line), var(--ink-line)) center center / 100% 1px no-repeat;
+}
+.cs-range::-webkit-slider-thumb {
+  width: 10px;
+  height: 10px;
+  margin-top: -1px;
+  border: 1px solid var(--gold-300);
+  border-radius: 1px;
+  background: var(--ink-deep);
+  box-shadow: none;
+  transition:
+    border-color var(--dur-fast) linear,
+    background var(--dur-fast) linear,
+    box-shadow var(--dur-fast) linear;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.cs-range::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--gold-300);
+  border-radius: 1px;
+  background: var(--ink-deep);
+  transition:
+    border-color var(--dur-fast) linear,
+    background var(--dur-fast) linear,
+    box-shadow var(--dur-fast) linear;
+}
+.cs-range:hover::-webkit-slider-thumb,
+.cs-range:focus-visible::-webkit-slider-thumb {
+  border-color: var(--gold-100);
+  background: var(--ink-raise);
+  box-shadow: 0 0 0 3px rgba(232, 200, 120, 0.12);
+}
+.cs-range:hover::-moz-range-thumb,
+.cs-range:focus-visible::-moz-range-thumb {
+  border-color: var(--gold-100);
+  background: var(--ink-raise);
+  box-shadow: 0 0 0 3px rgba(232, 200, 120, 0.12);
+}
+.cs-range:active::-webkit-slider-thumb {
+  background: var(--gold-300);
+}
+.cs-range:active::-moz-range-thumb {
+  background: var(--gold-300);
+}
+
+/* ── 导入区 ───────────────────────────────────────────────── */
+.cs-import {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 20px 12px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--ink-line-strong);
+  background: rgba(5, 7, 11, 0.55);
+}
+.cs-import-text {
+  width: 100%;
+  min-height: 74px;
+  padding: 6px 8px;
+  border: 1px solid var(--ink-line);
+  border-radius: 1px;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  letter-spacing: 0.01em;
+  color: var(--bone-200);
+  resize: vertical;
+}
+.cs-import-text:focus-visible {
+  border-color: var(--gold-400);
+  outline: none;
+}
+.cs-import-text::placeholder {
+  color: var(--bone-500);
+}
+.cs-import-error {
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: var(--state-error);
+}
+.cs-import-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ── 动作按钮 ─────────────────────────────────────────────── */
+.cs-act {
+  min-height: 32px;
+  padding: 6px 14px;
+  border: 1px solid var(--ink-line-strong);
+  border-radius: 2px;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  color: var(--bone-200);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+.cs-act:hover,
+.cs-act:focus-visible {
+  border-color: var(--gold-400);
+  color: var(--gold-100);
+}
+.cs-act--go {
+  border-color: var(--gold-400);
+  color: var(--gold-100);
+}
+.cs-act--go:hover,
+.cs-act--go:focus-visible {
+  background: rgba(232, 200, 120, 0.07);
+}
+.cs-act--quiet {
+  border-color: var(--ink-line);
+  color: var(--bone-400);
+}
+.cs-act--quiet:hover,
+.cs-act--quiet:focus-visible {
+  border-color: var(--ink-line-strong);
+  color: var(--bone-200);
+}
+
+/* ── 页脚 ─────────────────────────────────────────────────── */
+.cs-foot {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--ink-line-strong);
+}
+.cs-foot-actions {
+  display: flex;
+  gap: 8px;
+}
+.cs-foot-hint {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--bone-500);
+  white-space: nowrap;
+}
+
+/* ── 移动端 ≤720px：全屏 sheet ─────────────────────────────── */
+@media (max-width: 720px) {
+  .cs {
+    width: 100%;
+    border-left: 0;
+  }
+  .cs-head {
+    height: 56px;
+    padding: 0 8px 0 16px;
+  }
+  .cs-presets {
+    padding: 10px 16px 12px;
+  }
+  .cs-preset {
+    min-height: 40px;
+    padding: 8px 12px;
+  }
+  .cs-scroll {
+    padding: 2px 16px 14px;
+  }
+  .cs-row {
+    grid-template-columns: 84px minmax(0, 1fr) 40px;
+    column-gap: 8px;
+    padding: 7px 0;
+  }
+  .cs-row-label {
+    font-size: 12.5px;
+  }
+  .cs-range {
+    height: 30px;
+  }
+  .cs-range::-webkit-slider-thumb {
+    width: 14px;
+    height: 14px;
+    margin-top: -3px;
+  }
+  .cs-range::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+  }
+  .cs-import {
+    margin: 0 16px 10px;
+  }
+  .cs-foot {
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    flex-wrap: wrap;
+  }
+  .cs-act {
+    min-height: 40px;
+    padding: 8px 16px;
+  }
+  .cs-foot-hint {
+    display: none;
+  }
+}
+
+/* ── reduced motion ───────────────────────────────────────── */
+.xj-hud[data-reduced='true'] .cs {
+  clip-path: none;
+  transition: none;
+}
+.xj-hud[data-reduced='true'] .cs-backdrop {
+  transition: none;
+}

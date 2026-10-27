@@ -1,0 +1,913 @@
+/* XUANJI · 璇玑 — v2.0 双视图（观星 / 整机）样式层
+   纪律：视图铭牌是「同一台仪器、两套铭牌」；HUD 面板 320ms 交叉淡入（左右错 120ms）；
+   来源色只做 1px/细条识别；机枢数值等宽右对齐；器录表无竖线无斑马不卡片化。 */
+
+/* ══ 1. 顶栏视图铭牌：智能体 ｜ 整机 ═══════════════════════════ */
+.tb-views {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-left: 12px;
+}
+.tb-view {
+  position: relative;
+  margin: 0;
+  padding: 3px 2px 4px;
+  background: none;
+  border: 0;
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+  color: var(--bone-400);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.tb-view:hover {
+  color: var(--gold-200);
+}
+.tb-view[aria-pressed='true'] {
+  color: var(--gold-100);
+}
+.tb-view[aria-pressed='true']::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--gold-300);
+  opacity: 0.9;
+}
+.tb-view:focus-visible {
+  outline: 2px solid var(--gold-300);
+  outline-offset: 4px;
+}
+.tb-view-sep {
+  font-size: 10px;
+  color: var(--ink-line-strong);
+  letter-spacing: 0;
+}
+
+/* ══ 2. 两视图互斥显示（HUD 面板 320ms 交叉淡入，右面板晚 120ms）══ */
+.led,
+.sys-panel,
+.ds-wrap,
+.pr-wrap {
+  transition: opacity 320ms var(--ease-out), visibility 0s linear 0s;
+}
+.xj-hud[data-view='system'] .led,
+.xj-hud[data-view='system'] .ds-wrap {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 320ms var(--ease-out), visibility 0s linear 320ms;
+}
+.xj-hud[data-view='system'] .ds-wrap {
+  transition-delay: 120ms, 120ms;
+}
+.xj-hud[data-view='agents'] .sys-panel,
+.xj-hud[data-view='agents'] .pr-wrap {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 320ms var(--ease-out), visibility 0s linear 320ms;
+}
+.xj-hud[data-view='agents'] .pr-wrap {
+  transition-delay: 120ms, 120ms;
+}
+.xj-hud[data-view='agents'] .tb-metrics--system,
+.xj-hud[data-view='agents'] .tb-uptime,
+.xj-hud[data-view='agents'] .tb-battery {
+  display: none;
+}
+.xj-hud[data-view='system'] .tb-metrics--agents {
+  display: none;
+}
+.xj-hud[data-view='system'] .tb-mode,
+.xj-hud[data-view='system'] .tb-paused {
+  display: none;
+}
+.xj-hud[data-view='system'] .tb-upsub,
+.xj-hud[data-view='system'] .tb-sub {
+  display: none;
+}
+
+/* ══ 3. 顶栏整机指标 / 已行 / 电池 / 候采 ══════════════════ */
+.tb-uptime,
+.tb-battery {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--bone-400);
+  white-space: nowrap;
+}
+.tb-uptime::before,
+.tb-battery::before {
+  content: '·';
+  margin: 0 7px 0 4px;
+  color: var(--ink-line-strong);
+}
+.tb-battery {
+  color: var(--patina-300);
+}
+.tb-metrics--system .tb-metric--sys {
+  gap: 8px;
+}
+.tb-metrics--system .tb-metric--sys .tb-metric-value {
+  font-size: 12px;
+  color: var(--bone-100);
+}
+.tb-catchup {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border: 1px solid rgba(196, 85, 61, 0.42);
+  border-radius: var(--radius-s);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--state-error);
+  white-space: nowrap;
+}
+.tb-catchup[hidden] {
+  display: none;
+}
+
+/* ══ 4. 星牒「诸源」签（来源色只做一条 1px 竖笔）══════════════ */
+.ds-sec-title--sources {
+  margin-top: 2px;
+}
+.ds-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0 10px;
+}
+.ds-sources[hidden] {
+  display: none;
+}
+.ds-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 3px 8px;
+  background: none;
+  border: 1px solid var(--ink-line);
+  border-radius: var(--radius-s);
+  color: var(--bone-300);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+.ds-source::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 1px;
+  height: 8px;
+  background: var(--src-tint, var(--bone-500));
+  opacity: 0.85;
+}
+.ds-source:hover {
+  border-color: var(--ink-line-strong);
+  color: var(--bone-100);
+}
+.ds-source[aria-pressed='true'] {
+  border-color: var(--gold-300);
+  color: var(--gold-100);
+  background: rgba(232, 200, 120, 0.05);
+}
+.ds-source:focus-visible {
+  outline: 2px solid var(--gold-300);
+  outline-offset: 3px;
+}
+.ds-source-label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.ds-source-count {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--bone-400);
+}
+.ds-source[aria-pressed='true'] .ds-source-count {
+  color: var(--gold-200);
+}
+.ds-source[data-state='absent'] {
+  border-style: dashed;
+  color: var(--bone-500);
+}
+.ds-source[data-state='absent']::before {
+  background: var(--bone-500);
+  opacity: 0.5;
+}
+.ds-source[data-state='absent'] .ds-source-count {
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  color: var(--bone-500);
+}
+.ds-source-demo {
+  font-style: normal;
+  padding: 0 3px;
+  border: 1px solid var(--ink-line-strong);
+  font-size: 9px;
+  line-height: 1.45;
+  color: var(--gold-400);
+}
+
+/* 来源色（只给 1px 竖笔/短名用；星体主色仍由状态决定） */
+.ds-source[data-source='dsh'],
+.ds-sector[data-source='dsh'] {
+  --src-tint: #d8b26a;
+}
+.ds-source[data-source='hermes'],
+.ds-sector[data-source='hermes'] {
+  --src-tint: #7fae98;
+}
+.ds-source[data-source='opencode'],
+.ds-sector[data-source='opencode'] {
+  --src-tint: #4e6e8e;
+}
+.ds-source[data-source='claude'],
+.ds-sector[data-source='claude'] {
+  --src-tint: #b98a4e;
+}
+.ds-source[data-source='codex'],
+.ds-sector[data-source='codex'] {
+  --src-tint: #8b8474;
+}
+.ds-source[data-source='other'],
+.ds-sector[data-source='other'] {
+  --src-tint: #6f6a5e;
+}
+
+/* ══ 5. 分野行：来源短名前缀 + 筛选降透明度 ══════════════════ */
+.ds-sector-src {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--src-tint, var(--bone-400));
+  opacity: 0.85;
+  padding-right: 1px;
+}
+.ds-sector-src[hidden] {
+  display: none;
+}
+.ds-sector {
+  transition: opacity var(--dur-mid) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+.ds-sector.is-dimmed {
+  opacity: 0.45;
+}
+.ds-sector.is-dimmed:hover,
+.ds-sector.is-dimmed:focus-visible {
+  opacity: 1;
+}
+
+/* ══ 6. 起居注行首来源小签（≥2 来源时才出现）═════════════════ */
+.led-src {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 4px;
+  border-left: 1px solid var(--src-tint, var(--ink-line));
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  color: var(--src-tint, var(--bone-400));
+  opacity: 0.9;
+  white-space: nowrap;
+}
+.led-src[hidden] {
+  display: none;
+}
+.led[data-multi-source='true'] .led-src[data-source='dsh'] {
+  --src-tint: #d8b26a;
+}
+.led[data-multi-source='true'] .led-src[data-source='hermes'] {
+  --src-tint: #7fae98;
+}
+.led[data-multi-source='true'] .led-src[data-source='opencode'] {
+  --src-tint: #4e6e8e;
+}
+.led[data-multi-source='true'] .led-src[data-source='claude'] {
+  --src-tint: #b98a4e;
+}
+.led[data-multi-source='true'] .led-src[data-source='codex'] {
+  --src-tint: #8b8474;
+}
+.led[data-multi-source='true'] .led-src[data-source='other'] {
+  --src-tint: #6f6a5e;
+}
+.led[data-multi-source='true'] .led-row {
+  grid-template-columns: 26px 58px max-content minmax(0, 1fr) auto 33px 11px;
+  column-gap: 8px;
+}
+@media (min-width: 1440px) {
+  .led[data-multi-source='true'] .led-row {
+    grid-template-columns: 28px 64px max-content minmax(0, 1fr) auto 33px 11px;
+    column-gap: 10px;
+  }
+}
+@media (max-width: 720px) {
+  .led[data-multi-source='true'] .led-row {
+    grid-template-columns: 24px auto max-content minmax(0, 1fr) auto 30px 11px;
+    column-gap: 6px;
+  }
+}
+@media (max-width: 480px) {
+  .led-src {
+    display: none;
+  }
+}
+
+/* ══ 7. 《机枢》——整机视图左下数值面板 ══════════════════════ */
+.sys-panel {
+  position: absolute;
+  left: clamp(18px, 2.4vw, 40px);
+  bottom: 24px;
+  z-index: var(--z-panel);
+  width: clamp(340px, 36vw, 560px);
+  padding: 14px 18px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: linear-gradient(
+    to top,
+    rgba(5, 7, 11, 0.94) 0%,
+    rgba(5, 7, 11, 0.82) 42%,
+    rgba(5, 7, 11, 0.46) 76%,
+    rgba(5, 7, 11, 0) 100%
+  );
+  pointer-events: none;
+  overflow: hidden;
+}
+.sys-panel::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(to right, var(--ink-line-strong), rgba(200, 182, 142, 0.08) 88%, transparent);
+}
+.sys-panel > * {
+  pointer-events: auto;
+}
+.sys-panel :focus-visible {
+  outline: 2px solid var(--gold-300);
+  outline-offset: 4px;
+}
+.sys-grip {
+  display: none;
+}
+.sys-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.sys-stamp {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 29px;
+  border: 1px solid var(--ink-line-strong);
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  font-family: var(--font-display);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--gold-300);
+  line-height: 1;
+}
+.sys-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.sys-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.24em;
+  line-height: 1.1;
+  color: var(--bone-100);
+}
+.sys-sub {
+  font-size: 11.5px;
+  letter-spacing: 0.03em;
+  color: var(--bone-400);
+}
+.sys-meta {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: var(--bone-500);
+  white-space: nowrap;
+}
+.sys-unavailable {
+  margin: 2px 0 0;
+  padding: 6px 0 7px;
+  border-top: 1px solid var(--ink-line);
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: var(--state-error);
+}
+.sys-unavailable[hidden] {
+  display: none;
+}
+.sys-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 26px;
+  row-gap: 2px;
+}
+.sys-row {
+  display: grid;
+  grid-template-columns: minmax(0, auto) auto 84px;
+  grid-template-areas:
+    'label value spark'
+    'sub sub spark';
+  align-items: center;
+  column-gap: 9px;
+  padding: 5px 0 6px;
+  border-bottom: 1px solid var(--ink-line);
+}
+.sys-row:last-child,
+.sys-row:nth-last-child(2) {
+  border-bottom-color: transparent;
+}
+.sys-label {
+  grid-area: label;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  color: var(--bone-400);
+  white-space: nowrap;
+}
+.sys-value {
+  grid-area: value;
+  justify-self: end;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  color: var(--bone-100);
+  white-space: nowrap;
+}
+.sys-row-sub {
+  grid-area: sub;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  color: var(--bone-500);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sys-spark {
+  grid-area: spark;
+  width: 84px;
+  height: 16px;
+  overflow: visible;
+}
+.sys-spark polyline {
+  transition: none;
+}
+.sys-foot {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: var(--bone-400);
+}
+.sys-foot[hidden] {
+  display: none;
+}
+.sys-panel.is-reduced .sys-spark polyline {
+  transition: none;
+}
+
+/* ══ 8. 《器录》——整机视图右侧进程表 ═══════════════════════ */
+.pr-wrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+  z-index: var(--z-panel);
+}
+.pr-tab {
+  position: absolute;
+  right: 0;
+  top: 46%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 88px;
+  margin: 0;
+  padding: 0;
+  background: var(--ink-panel);
+  border: 1px solid var(--ink-line);
+  border-right: 0;
+  border-radius: 2px 0 0 2px;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.pr-tab:hover {
+  border-color: var(--ink-line-strong);
+}
+.pr-tab:focus-visible {
+  outline: 2px solid var(--gold-300);
+  outline-offset: 2px;
+}
+.pr-tab-text {
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  font-family: var(--font-display);
+  font-size: 12.5px;
+  letter-spacing: 0.3em;
+  color: var(--gold-300);
+}
+.pr-tab[hidden] {
+  display: none;
+}
+.proc-panel {
+  position: relative;
+  flex: 0 0 auto;
+  width: 0;
+  height: min(76vh, 680px);
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--ink-panel);
+  border-left: 1px solid var(--ink-line-strong);
+  pointer-events: auto;
+  transition: width var(--dur-mid) var(--ease-out);
+}
+.proc-panel[data-open='true'] {
+  width: 320px;
+}
+.proc-panel[data-open='true'] .pr-head,
+.proc-panel[data-open='true'] .pr-table {
+  clip-path: inset(0 0 0 100%);
+  opacity: 0;
+}
+.proc-panel.is-unrolled .pr-head,
+.proc-panel.is-unrolled .pr-table {
+  clip-path: inset(0 0 0 0);
+  opacity: 1;
+  transition: clip-path 420ms var(--ease-engrave), opacity 220ms var(--ease-out);
+}
+.proc-panel.is-unrolled .pr-head {
+  transition-delay: 0ms;
+}
+.proc-panel.is-unrolled .pr-table {
+  transition-delay: 120ms;
+}
+.pr-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid var(--ink-line);
+}
+.pr-stamp {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 29px;
+  border: 1px solid var(--ink-line-strong);
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  font-family: var(--font-display);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--gold-300);
+  line-height: 1;
+}
+.pr-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.pr-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.24em;
+  line-height: 1.1;
+  color: var(--bone-100);
+}
+.pr-sub {
+  font-size: 11.5px;
+  letter-spacing: 0.03em;
+  color: var(--bone-400);
+}
+.pr-meta {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: var(--bone-500);
+  white-space: nowrap;
+}
+.pr-head .xj-close {
+  flex: 0 0 auto;
+  position: relative;
+  top: -6px;
+  right: -6px;
+}
+.pr-table {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 6px 6px 14px;
+}
+.pr-table[hidden] {
+  display: none;
+}
+.pr-head-row,
+.pr-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 52px 60px;
+  align-items: center;
+  column-gap: 8px;
+}
+.pr-head-row {
+  padding: 9px 6px 7px 0;
+  border-bottom: 1px solid var(--ink-line-strong);
+}
+.pr-th {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--bone-300);
+  white-space: nowrap;
+}
+.pr-th.pr-cpu,
+.pr-th.pr-mem {
+  text-align: right;
+}
+.pr-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding-right: 4px;
+}
+.pr-row {
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 6px 4px 0;
+  margin: 0;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--ink-line);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+.pr-row:last-child {
+  border-bottom-color: transparent;
+}
+.pr-row:hover {
+  background: rgba(232, 200, 120, 0.04);
+}
+.pr-row:focus-visible {
+  outline: 2px solid var(--gold-300);
+  outline-offset: -2px;
+}
+.pr-row[aria-pressed='true'] {
+  background: rgba(232, 200, 120, 0.07);
+  box-shadow: inset 2px 0 0 var(--gold-300);
+}
+.pr-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pr-pid {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--bone-500);
+}
+.pr-name {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--bone-200);
+}
+.pr-cpu,
+.pr-mem {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--bone-300);
+  text-align: right;
+}
+.pr-row[aria-pressed='true'] .pr-name {
+  color: var(--gold-100);
+}
+.pr-empty {
+  margin: 0;
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--bone-400);
+}
+.pr-empty[hidden] {
+  display: none;
+}
+@media (min-width: 1440px) {
+  .pr-table {
+    padding-left: 16px;
+  }
+  .pr-row {
+    min-height: 32px;
+  }
+  .pr-head-row,
+  .pr-row {
+    grid-template-columns: 52px minmax(0, 1fr) 56px 64px;
+  }
+}
+
+/* ══ 9. 移动端适配 ═══════════════════════════════════════════ */
+@media (max-width: 900px) {
+  .tb-views {
+    margin-left: 8px;
+    gap: 7px;
+  }
+  .tb-view {
+    font-size: 11.5px;
+    padding: 3px 1px 4px;
+  }
+  .tb-view-sep {
+    display: none;
+  }
+  .tb-uptime,
+  .tb-battery {
+    font-size: 10.5px;
+  }
+}
+
+@media (max-width: 720px) {
+  .xj-hud[data-view='system'] .tb-metrics--system {
+    display: flex;
+    gap: 12px;
+  }
+  .xj-hud[data-view='system'] .tb-uptime,
+  .xj-hud[data-view='system'] .tb-battery {
+    display: none;
+  }
+  .tb-metrics--system .tb-metric--disk,
+  .tb-metrics--system .tb-metric--net,
+  .tb-metrics--system .tb-metric--net ~ .tb-sep {
+    display: none;
+  }
+  .tb-metrics--system .tb-metric--sys .tb-metric-value {
+    font-size: 11.5px;
+  }
+  .sys-panel {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-height: 70vh;
+    padding: 10px 14px calc(14px + env(safe-area-inset-bottom));
+    background: linear-gradient(to top, rgba(5, 7, 11, 0.97) 0%, rgba(5, 7, 11, 0.9) 70%, rgba(5, 7, 11, 0.7) 100%);
+    overflow-y: auto;
+    transition: max-height var(--dur-slow) var(--ease-out);
+  }
+  .sys-panel::before {
+    background: linear-gradient(to right, var(--ink-line-strong), transparent 92%);
+  }
+  .sys-grip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 22px;
+    padding: 6px 0 2px;
+    background: none;
+    border: 0;
+    cursor: pointer;
+  }
+  .sys-grip:focus-visible {
+    outline: 2px solid var(--gold-300);
+    outline-offset: -2px;
+  }
+  .sys-grip-line {
+    width: 34px;
+    height: 2px;
+    background: var(--ink-line-strong);
+    opacity: 0.9;
+  }
+  .sys-panel:not([data-expanded='true']) .sys-body,
+  .sys-panel:not([data-expanded='true']) .sys-foot,
+  .sys-panel:not([data-expanded='true']) .sys-head {
+    display: none;
+  }
+  .sys-panel:not([data-expanded='true']) {
+    max-height: 42px;
+    overflow: hidden;
+    background: linear-gradient(to top, rgba(5, 7, 11, 0.94), rgba(5, 7, 11, 0.6));
+  }
+  .sys-panel[data-expanded='true'] {
+    max-height: 70vh;
+  }
+  .sys-body {
+    grid-template-columns: 1fr;
+    column-gap: 0;
+  }
+  .sys-row {
+    grid-template-columns: minmax(0, auto) auto 96px;
+    padding: 7px 0;
+  }
+  .sys-spark {
+    width: 96px;
+  }
+  .sys-meta {
+    display: none;
+  }
+  .pr-tab {
+    top: 84px;
+    bottom: auto;
+    transform: none;
+    width: 26px;
+    height: 74px;
+  }
+  .proc-panel {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 0;
+    max-height: min(78vh, 640px);
+    border-left: 0;
+    border-top: 1px solid var(--ink-line-strong);
+    background: #090c12;
+    transition: height var(--dur-mid) var(--ease-out);
+  }
+  .proc-panel[data-open='true'] {
+    width: 100%;
+    height: min(78vh, 640px);
+  }
+  .pr-head {
+    padding: 12px 14px 10px;
+  }
+  .pr-head-row,
+  .pr-row {
+    grid-template-columns: 52px minmax(0, 1fr) 52px 62px;
+    column-gap: 7px;
+  }
+  .pr-row {
+    min-height: 40px;
+  }
+  .pr-th {
+    font-size: 10.5px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .led,
+  .sys-panel,
+  .ds-wrap,
+  .pr-wrap,
+  .ds-sector,
+  .ds-source,
+  .tb-view {
+    transition-duration: 200ms !important;
+  }
+  .proc-panel,
+  .proc-panel.is-unrolled .pr-head,
+  .proc-panel.is-unrolled .pr-table {
+    transition: none;
+    clip-path: none;
+    opacity: 1;
+  }
+  .sys-spark polyline {
+    transition: none;
+  }
+}
+.xj-hud[data-reduced='true'] .led,
+.xj-hud[data-reduced='true'] .sys-panel,
+.xj-hud[data-reduced='true'] .ds-wrap,
+.xj-hud[data-reduced='true'] .pr-wrap {
+  transition-duration: 200ms;
+}

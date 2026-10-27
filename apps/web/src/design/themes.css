@@ -1,0 +1,73 @@
+/* 璇玑 v2.3 · 双主题 CSS 覆盖
+ * 用法：applyTheme() 设置 <html data-theme="xuanji|scifi">；本文件在 tokens.css 之后加载，
+ * 用同名变量覆盖（canvas 侧颜色由 design/themes.ts 同步改写 token 对象）。
+ * 纪律（跟 BIBLE §3/§22.6）：主题只换「材质与色相」，不换信息结构、不改面积预算、
+ * 不引入参考游戏的具体图形/字标/字体；科幻主题也不许霓虹紫大面积铺底。
+ */
+
+:root[data-theme='scifi'] {
+  /* ---- 墨：深空底 ---- */
+  --ink-void: #03060c;
+  --ink-deep: #061019;
+  --ink-raise: rgba(8, 20, 32, 0.86);
+  --ink-veil: rgba(3, 8, 14, 0.62);
+  --ink-panel: rgba(6, 16, 26, 0.74);
+  --ink-line: rgba(110, 196, 224, 0.18);
+  --ink-line-strong: rgba(110, 196, 224, 0.38);
+
+  /* ---- 主色位：青蓝扫描光（原「金」） ---- */
+  --gold-100: #e8fcff;
+  --gold-200: #9fe9ff;
+  --gold-300: #5fd0ea;
+  --gold-400: #2f9fbe;
+  --gold-500: #185a70;
+  --gold-glow: rgba(95, 208, 234, 0.5);
+
+  /* ---- 副色位：荧光青绿（原「铜锈」） ---- */
+  --patina-300: #7df0c4;
+  --patina-500: #2c7f66;
+
+  /* ---- 文字：冷白（原「骨白」） ---- */
+  --bone-100: #f2f9ff;
+  --bone-200: #d5e6f3;
+  --bone-300: #a8bccc;
+  --bone-400: #7a8fa2;
+  --bone-500: #4b5a6a;
+
+  /* ---- 状态 ---- */
+  --state-live: #6ee7ff;
+  --state-idle: #a8bccc;
+  --state-ended: #4b5a6a;
+  --state-error: #ff5c5c;
+  --state-approval: #b98cff;
+
+  /* ---- 五行：霓虹化但仍守 <8% 面积 ---- */
+  --cat-read: #58e0c0;
+  --cat-write: #ff7a4d;
+  --cat-exec: #ffc247;
+  --cat-net: #4d9bff;
+  --cat-agent: #c9a6ff;
+
+  /* ---- 冷色：远景电离蓝 + 算力靛 ---- */
+  --cold-300: #7fb8ff;
+  --indigo-400: #5b6cf0;
+
+  /* ---- 语义别名 / 材质：仪表玻璃感（仍不圆角、不毛玻璃大面积） ---- */
+  --accent: var(--gold-300);
+  --radius-s: 2px;
+  --radius-m: 2px;
+  --grain-opacity: 0.035;
+  --vignette-strength: 0.42;
+  --text-shadow-glow: 0 0 16px rgba(95, 208, 234, 0.35);
+
+  /* 仅供 HUD 的额外主题钩子（可选使用） */
+  --theme-scanline: rgba(95, 208, 234, 0.06);
+  --theme-grid: rgba(110, 196, 224, 0.055);
+  --theme-signal: #79f2d0;
+}
+
+:root[data-theme='xuanji'] {
+  --theme-scanline: rgba(232, 200, 120, 0.045);
+  --theme-grid: rgba(200, 182, 142, 0.045);
+  --theme-signal: #7fae98;
+}

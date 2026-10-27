@@ -1,0 +1,234 @@
+/* XUANJI · 璇玑 — 帮助（卷宗页 · §17.6）
+   页眉 1px 线 + 页码（壹/叁）+ 右下落款「璇玑 · 非商业使用」；不用弹窗阴影、不加圆角。 */
+
+.hp-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-overlay) - 1);
+  background: rgba(3, 5, 9, 0.62);
+  opacity: 0;
+  pointer-events: auto;
+  transition: opacity var(--dur-mid) linear;
+}
+.hp-backdrop.is-in {
+  opacity: 1;
+}
+
+.hp {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: var(--z-overlay);
+  display: flex;
+  flex-direction: column;
+  width: min(680px, calc(100vw - 48px));
+  max-height: min(84vh, 760px);
+  border: 1px solid var(--ink-line-strong);
+  background: linear-gradient(180deg, rgba(12, 15, 23, 0.99), rgba(8, 11, 17, 0.99));
+  clip-path: inset(0 0 100% 0);
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+  transition: clip-path 380ms var(--ease-engrave);
+}
+.hp.is-in {
+  clip-path: inset(0);
+}
+
+/* ── 页眉 ─────────────────────────────────────────────────── */
+.hp-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: 12px;
+  padding: 15px 20px 11px;
+  border-bottom: 1px solid var(--ink-line-strong);
+}
+.hp-head-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  line-height: 1.2;
+  letter-spacing: 0.34em;
+  color: var(--bone-100);
+}
+.hp-page-num {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.2;
+  letter-spacing: 0.16em;
+  color: var(--bone-500);
+}
+.hp-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+/* ── 正文 ─────────────────────────────────────────────────── */
+.hp-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 18px 24px 22px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.hp-sec {
+  margin-bottom: 22px;
+}
+.hp-sec:last-child {
+  margin-bottom: 4px;
+}
+.hp-sec-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--ink-line);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: 0.18em;
+  color: var(--bone-200);
+}
+.hp-sec-title::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 14px;
+  height: 1px;
+  background: var(--gold-400);
+}
+.hp-concept {
+  font-size: 13.5px;
+  line-height: 2;
+  letter-spacing: 0.02em;
+  color: var(--bone-200);
+  text-indent: 2em;
+}
+
+/* ── 键位表 ───────────────────────────────────────────────── */
+.hp-keys {
+  display: flex;
+  flex-direction: column;
+}
+.hp-key-row {
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 14px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--ink-line);
+}
+.hp-key-row:last-child {
+  border-bottom-color: transparent;
+}
+.hp-key {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  letter-spacing: 0.06em;
+  color: var(--gold-200);
+  white-space: nowrap;
+}
+.hp-key-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 10px;
+  row-gap: 1px;
+}
+.hp-key-do {
+  font-size: 12.5px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: var(--bone-200);
+}
+.hp-key-note {
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+  color: var(--bone-500);
+}
+
+.hp-source-text {
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  line-height: 1.8;
+  letter-spacing: 0.02em;
+  color: var(--bone-300);
+}
+.hp-fine {
+  font-size: 11.5px;
+  line-height: 1.8;
+  letter-spacing: 0.02em;
+  color: var(--bone-500);
+}
+
+/* ── 页脚：双署名 ─────────────────────────────────────────── */
+.hp-foot {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 20px calc(11px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--ink-line-strong);
+}
+.hp-foot-left {
+  font-size: 11px;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  color: var(--bone-500);
+}
+.hp-foot-right {
+  font-family: var(--font-display);
+  font-size: 11.5px;
+  line-height: 1.5;
+  letter-spacing: 0.1em;
+  color: var(--bone-400);
+  white-space: nowrap;
+}
+
+/* ── 移动端 ≤720px：近全屏 ────────────────────────────────── */
+@media (max-width: 720px) {
+  .hp {
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border: 0;
+    transform: none;
+  }
+  .hp-head {
+    padding: 14px 16px 10px;
+  }
+  .hp-page-num {
+    margin-left: auto;
+    margin-right: 34px;
+  }
+  .hp-body {
+    padding: 16px 16px calc(18px + env(safe-area-inset-bottom));
+  }
+  .hp-key-row {
+    grid-template-columns: 92px minmax(0, 1fr);
+    column-gap: 10px;
+    padding: 7px 0;
+  }
+  .hp-foot {
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    flex-wrap: wrap;
+  }
+  .hp-key-do {
+    font-size: 13px;
+  }
+}
+
+/* ── reduced motion ───────────────────────────────────────── */
+.xj-hud[data-reduced='true'] .hp {
+  clip-path: none;
+  transition: none;
+}
+.xj-hud[data-reduced='true'] .hp-backdrop {
+  transition: none;
+}
