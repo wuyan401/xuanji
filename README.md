@@ -108,8 +108,7 @@ pnpm dev              # 后端 8787 + Vite 5173，浏览器打开 5173
 | 来源 | 本机位置 | 读取方式 |
 |---|---|---|
 | **DSH**（DeepSeek Harness） | `~/.dsh/storages/session_projcache/sessions/*.json`、`~/.dsh/sessions/**/session.v4.jsonl.zstd` | 快照轮询 + zstd 多帧增量解析 |
-| **Hermes** | `$HERMES_DB`（默认 `~/.hermes/state.db`） | `node:sqlite` 只读 + busy timeout + 水位增量 |
-| **opencode** | `~/.local/share/opencode/opencode.db` | `node:sqlite` 只读 |
+| **Hermes** | `$HERMES_DB`（默认 `~/.hermes/state.db`；装在自定义目录时用 `HERMES_DB` 指向其 `state.db`） | `node:sqlite` 只读 + busy timeout + 水位增量 || **opencode** | `~/.local/share/opencode/opencode.db` | `node:sqlite` 只读 |
 | **Claude Code** | `~/.claude/projects/**/*.jsonl` | 逐行 JSONL 解析 |
 | **Codex** | `~/.codex/sessions/**`（预留） | 未发现时不产生任何数据 |
 | **整机遥测** | PowerShell 采样（`system-sample.ps1`） | 每 2s 一行 JSON：CPU/内存/磁盘/网络/进程/电池/uptime |
