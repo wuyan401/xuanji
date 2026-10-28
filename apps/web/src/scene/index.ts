@@ -266,6 +266,8 @@ export function createScene(
     sourceFilter: null,
     sourceCount: 0,
     systemAvailable: false,
+    /** v2.8 §27.2：整机遥测快照（GPU 忙闲因子） */
+    system: null,
     zooming: false,
     // —— v2.3 §22：手势后期权重（平滑降权，不是硬开关）与主题
     fxWeight: 1,
@@ -772,6 +774,7 @@ export function createScene(
     sourceCount = fleet ? (fleet.sources ?? []).filter((x) => x.state === 'detected').length : 0;
     env.sourceCount = sourceCount;
     env.systemAvailable = plate.available;
+    env.system = systemSnapshot;
 
     if (pendingResize) {
       pendingResize = false;
@@ -1512,6 +1515,16 @@ export function createScene(
     /** v2.3 验收（§22.3）：径向层级（权重↔半径的 Spearman / 内外平均权重） */
     debugHierarchy(): { spearman: number; innerAvgWeight: number; outerAvgWeight: number; stars: number } {
       return stars.debugHierarchy();
+    },
+    /** v2.8 验收（§27.1）：星体新鲜度尺寸（近期/久置组平均倍数、跨组比、单帧最大变化） */
+    debugStarFreshness(): {
+      recentAvg: number;
+      oldAvg: number;
+      ratio: number;
+      maxStepRatio: number;
+      stars: number;
+    } {
+      return stars.debugStarFreshness();
     },
     /** v2.4 验收（§23）：工作光流 / 工具光束改锚 / 随势旋转 / 单帧 scene 耗时 */
     debugStreams(): StreamsDebug {

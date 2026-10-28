@@ -1,4 +1,4 @@
-# ASTRA system sampler — one long-lived PowerShell process that prints one compact
+﻿# ASTRA system sampler — one long-lived PowerShell process that prints one compact
 # JSON line every N milliseconds. Spawned once by src/system.mjs and restarted if
 # it ever exits. Read-only: it only queries performance counters / CIM / .NET APIs.
 #
@@ -90,6 +90,45 @@ $prevProcAt = $null
 $prevNet = $null
 $prevNetAt = $null
 $batteryCache = $null
+$gpuCache = $null
+
+# v2.8：显存/GPU。nvidia-smi 每次约 30–80ms，每 2 个采样周期取一次并缓存；
+# 没有 NVIDIA 工具时返回 $null（HUD 显示「显存不可用」，不伪造 0）。
+function Get-GpuSample {
+    $result = $null
+    try {
+        $exe = $null
+        $candidate = Join-Path $env:SystemRoot 'System32\nvidia-smi.exe'
+        if (Test-Path $candidate) { $exe = $candidate }
+        elseif (Get-Command nvidia-smi -ErrorAction SilentlyContinue) { $exe = 'nvidia-smi' }
+        if ($exe) {
+            $line = & $exe --query-gpu=name,memory.total,memory.used,utilization.gpu,temperature.gpu --format=csv,noheader,nounits 2>$null | Select-Object -First 1
+            if ($line) {
+                $parts = $line -split ',\s*'
+                if ($parts.Count -ge 5) {
+                    $memTotal = 0.0
+                    $memUsed = 0.0
+                    $util = 0.0
+                    $temp = 0.0
+                    [void][double]::TryParse($parts[1], [ref]$memTotal)
+                    [void][double]::TryParse($parts[2], [ref]$memUsed)
+                    [void][double]::TryParse($parts[3], [ref]$util)
+                    [void][double]::TryParse($parts[4], [ref]$temp)
+                    $result = @{
+                        name = [string]$parts[0]
+                        memTotalBytes = [long]($memTotal * 1MB)
+                        memUsedBytes = [long]($memUsed * 1MB)
+                        memPct = $(if ($memTotal -gt 0) { [Math]::Round($memUsed / $memTotal, 4) } else { 0 })
+                        utilPct = [Math]::Round($util / 100.0, 4)
+                        tempC = [int]$temp
+                        source = 'nvidia-smi'
+                    }
+                }
+            }
+        }
+    } catch { }
+    return $result
+}
 
 function Get-NetTotals {
     $rx = [long]0
@@ -224,6 +263,10 @@ while ($true) {
     }
     $battery = $batteryCache
 
+    # --- GPU / VRAM (every 2nd sample, cached) ------------------------------
+    if ($loop % 2 -eq 1) { $gpuCache = Get-GpuSample }
+    $gpu = $gpuCache
+
     # --- uptime ------------------------------------------------------------
     try {
         $uptimeSec = [Math]::Round([AstraNative]::GetTickCount64() / 1000.0, 0)
@@ -240,6 +283,7 @@ while ($true) {
         procs = $procs
         uptimeSec = $uptimeSec
         battery = $battery
+        gpu = $gpu
     }
     try {
         $json = $sample | ConvertTo-Json -Compress -Depth 6

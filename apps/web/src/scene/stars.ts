@@ -54,6 +54,20 @@ function starRadius(tokens: number): number {
   return clamp(2.6 + Math.log10(tokens + 1) * 1.25, 2.6, 10);
 }
 
+/** v2.8 §27.1 新鲜度：45min 时间常数下的「刚活动 → 久置」尺寸倍数。 */
+const FRESH_TAU_S = 2700;
+const FRESH_MIN = 0.55;
+const FRESH_GAIN = 0.75;
+/** v2.8 §27.1 单帧新鲜度变化上限（用户要求大小变化必须平滑，不瞬跳）。 */
+const FRESH_MAX_STEP = 0.02;
+
+/** v2.8 §27.1：recency=exp(-age/2700) → targetFresh=0.55+0.75*recency。 */
+function freshTargetOf(session: AgentSession, epochNow: number): number {
+  const age = Math.max(0, epochNow - (session.lastActivityAt ?? 0));
+  const recency = clamp01(Math.exp(-age / (FRESH_TAU_S * 1000)));
+  return FRESH_MIN + FRESH_GAIN * recency;
+}
+
 /** 同名分野的路径尾缀（取 path 倒数第二段，如 `AI/`）。 */
 function pathSuffix(path: string): string {
   if (!path) return '';
@@ -178,6 +192,11 @@ export class StarSystem {
   private frameAlphaStep = 0;
   private brightnessEstimate = 0;
   private ringRadius = new Map<number, number>();
+  /** v2.8 §27.1：最近 200 帧的单帧新鲜度变化（QA debugStarFreshness.maxStepRatio）。 */
+  private freshStepLog = new Float32Array(200);
+  private freshStepIdx = 0;
+  private freshStepFilled = 0;
+  private frameFreshStep = 0;
 
   // ————————————————————————————————————————————— 数据接入
 
@@ -483,6 +502,8 @@ export class StarSystem {
             radius: radiusBase,
             radiusTarget: radiusBase,
             r: starRadius(session.tokens?.output ?? 0),
+            /** v2.8 §27.1：初始就按当前新鲜度落位，避免首帧跳变 */
+            shownFresh: freshTargetOf(session, Date.now()),
             appear: this.initialised ? 0 : 1,
             vanishing: false,
             pulse: 0,
@@ -618,6 +639,7 @@ export class StarSystem {
 
     const wantOf = new Map<string, number>();
     const fading: StarNode[] = [];
+    this.frameFreshStep = 0;
     for (const star of this.stars) {
       const session = star.session;
       const z = clamp(star.zone, 0, this.zoneRot.length - 1);
@@ -638,6 +660,19 @@ export class StarSystem {
       star.activity = damp(star.activity, liveTarget, 2.2, dt);
       star.pulse = damp(star.pulse, 0, 2.6 + env.params.pulseDecay * 2.4, dt);
       star.r = starRadius(session.tokens?.output ?? 0);
+
+      // —— v2.8 §27.1：星体新鲜度尺寸（只叠加尺寸，不动轨道/层级/颜色/选中）
+      {
+        const targetFresh = freshTargetOf(session, Date.now());
+        const lambda = 1.1 * (env.reducedMotion ? 2.6 : 1);
+        let step = damp(star.shownFresh, targetFresh, lambda, dt) - star.shownFresh;
+        const stepLimit = FRESH_MAX_STEP * (env.reducedMotion ? 1.6 : 1);
+        if (step > stepLimit) step = stepLimit;
+        else if (step < -stepLimit) step = -stepLimit;
+        star.shownFresh = clamp(star.shownFresh + step, FRESH_MIN, FRESH_MIN + FRESH_GAIN);
+        const absStep = Math.abs(step);
+        if (absStep > this.frameFreshStep) this.frameFreshStep = absStep;
+      }
       const glowTarget =
         session.state === 'live'
           ? clamp01(0.2 + (rate / 26) * 0.8 + (session.openStep ? 0.15 : 0))
@@ -710,6 +745,11 @@ export class StarSystem {
       this.marks = this.marks.filter((m) => now - m.born < m.life);
       if (this.marks.length > 220) this.marks.splice(0, this.marks.length - 220);
     }
+
+    // v2.8 §27.1：记录本帧最大新鲜度变化（QA debugStarFreshness.maxStepRatio）
+    this.freshStepLog[this.freshStepIdx] = this.frameFreshStep;
+    this.freshStepIdx = (this.freshStepIdx + 1) % this.freshStepLog.length;
+    this.freshStepFilled = Math.min(this.freshStepLog.length, this.freshStepFilled + 1);
 
     this.trackMotion(env);
   }
@@ -1002,6 +1042,7 @@ export class StarSystem {
       const rDraw = Math.max(
         s.state === 'ended' || offline ? 1.6 : 0.6,
         star.r *
+          star.shownFresh *
           (0.55 + 0.45 * appear) *
           (isFocus || isSelected ? 1.35 : 1) *
           (s.state === 'ended' ? 0.78 : 1) *
@@ -1234,7 +1275,7 @@ export class StarSystem {
       const isFocus = !!focusId && star.id === focusId;
       let dim = env.connection === 'reconnecting' ? 0.8 : 1;
       if (focusId) dim *= isFocus ? 1 : dimOthers;
-      const radius = star.r * (2.1 + 2.1 * star.glow) * (isFocus ? 1.18 : 1);
+      const radius = star.r * star.shownFresh * (2.1 + 2.1 * star.glow) * (isFocus ? 1.18 : 1);
       // §22.1 twinkle：多倍频正弦（0.31/0.53/0.87Hz + id 相位），幅度 ≤8%
       const twk =
         1 +
@@ -1393,5 +1434,46 @@ export class StarSystem {
       outerAvgWeight: outerN > 0 ? outerSum / outerN : 0,
       stars: stars.length,
     };
+  }
+
+  /**
+   * v2.8 验收（§27.1）：星体新鲜度尺寸。
+   * recentAvg / oldAvg = 近期（<10min）/ 久置（>6h）组平均尺寸倍数；ratio = 两组之比；
+   * maxStepRatio = 近 200 帧内单帧 fresh 变化最大值（应 ≤0.02，用户要求「平滑不瞬跳」）。
+   */
+  debugStarFreshness(): {
+    recentAvg: number;
+    oldAvg: number;
+    ratio: number;
+    maxStepRatio: number;
+    stars: number;
+  } {
+    const epochNow = Date.now();
+    let recentSum = 0;
+    let recentN = 0;
+    let oldSum = 0;
+    let oldN = 0;
+    let count = 0;
+    let maxStepRatio = 0;
+    for (let i = 0; i < this.freshStepFilled; i += 1) {
+      const v = this.freshStepLog[i] ?? 0;
+      if (v > maxStepRatio) maxStepRatio = v;
+    }
+    for (const star of this.stars) {
+      if (star.vanishing) continue;
+      count += 1;
+      const age = epochNow - (star.session.lastActivityAt ?? 0);
+      if (age < 10 * 60 * 1000) {
+        recentSum += star.shownFresh;
+        recentN += 1;
+      } else if (age > 6 * 3600 * 1000) {
+        oldSum += star.shownFresh;
+        oldN += 1;
+      }
+    }
+    const recentAvg = recentN > 0 ? recentSum / recentN : 0;
+    const oldAvg = oldN > 0 ? oldSum / oldN : 0;
+    const ratio = oldAvg > 0.0001 ? recentAvg / oldAvg : 0;
+    return { recentAvg, oldAvg, ratio, maxStepRatio, stars: count };
   }
 }

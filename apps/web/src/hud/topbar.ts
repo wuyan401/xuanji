@@ -276,11 +276,13 @@ export function createTopbar(container: HTMLElement, opts: TopbarOptions = {}): 
     ]);
     return { root, value };
   }
-  const cpuMetric = sysMetric('处理器', '整机 CPU 使用率');
+  const cpuMetric = sysMetric('CPU', '整机 CPU 使用率');
   const memMetric = sysMetric('内存', '物理内存占用');
   const diskMetric = sysMetric('磁盘', '系统盘（C:）占用；悬停查看全部磁盘');
+  const vramMetric = sysMetric('显存', '显卡显存占用（GPU）');
   const netMetric = sysMetric('网速', '网络上下行速率（近 2s 采样）');
   diskMetric.root.classList.add('tb-metric--disk');
+  vramMetric.root.classList.add('tb-metric--gpu');
   netMetric.root.classList.add('tb-metric--net');
   const catchup = el('span', {
     class: 'tb-catchup',
@@ -294,6 +296,8 @@ export function createTopbar(container: HTMLElement, opts: TopbarOptions = {}): 
     memMetric.root,
     sep(),
     diskMetric.root,
+    sep(),
+    vramMetric.root,
     sep(),
     netMetric.root,
     sep(),
@@ -313,6 +317,7 @@ export function createTopbar(container: HTMLElement, opts: TopbarOptions = {}): 
   const procCpuMetric = procMetric('CPU', '整机处理器占用（与整机视图同源）');
   const procMemMetric = procMetric('内存', '物理内存占用', 'tb-metric--proc-mem');
   const procThreadsMetric = procMetric('线程', '进程线程总数', 'tb-metric--proc-threads');
+  const procVramMetric = procMetric('显存', '显卡显存占用（GPU）', 'tb-metric--proc-gpu');
   const procMetrics = el('div', { class: 'tb-metrics tb-metrics--processes' }, [
     procCountMetric.root,
     sep(),
@@ -321,6 +326,8 @@ export function createTopbar(container: HTMLElement, opts: TopbarOptions = {}): 
     procMemMetric.root,
     sep(),
     procThreadsMetric.root,
+    sep(),
+    procVramMetric.root,
   ]);
 
   const metrics = el('div', { class: 'tb-metrics tb-metrics--agents' }, [
@@ -533,6 +540,12 @@ export function createTopbar(container: HTMLElement, opts: TopbarOptions = {}): 
         .join('\n');
     }
     setText(netMetric.value, live ? fmtNetPairCompact(sys?.net.rxBps, sys?.net.txBps) : '—');
+    // v2.8：显存（null = 显存不可用，不写 0）
+    const gpu = live ? sys?.gpu ?? null : null;
+    setText(vramMetric.value, gpu ? fmtPct(gpu.memPct) : '—');
+    vramMetric.root.title = gpu
+      ? `${gpu.name || 'GPU'} · 已用 ${fmtBytes(gpu.memUsedBytes)} / ${fmtBytes(gpu.memTotalBytes)} · 利用率 ${fmtPct(gpu.utilPct)} · ${Math.round(gpu.tempC)}°C`
+      : '显存不可用（未检测到 NVIDIA GPU 或 nvidia-smi 不可用）';
     setText(uptime, live && sys ? `已行 ${fmtUptime(sys.uptimeSec)}` : '');
     const batteryText = live ? fmtBattery(sys) : null;
     setText(battery, batteryText ? `电池 ${batteryText}` : '');
@@ -545,6 +558,10 @@ export function createTopbar(container: HTMLElement, opts: TopbarOptions = {}): 
     setText(procCpuMetric.value, pa ? `${pa.cpuPct.toFixed(1)}%` : '—');
     setText(procMemMetric.value, pa ? fmtPct(pa.memPct) : '—');
     setText(procThreadsMetric.value, pa ? formatNumber(pa.threads) : '—');
+    setText(procVramMetric.value, gpu ? fmtPct(gpu.memPct) : '—');
+    procVramMetric.root.title = gpu
+      ? `${gpu.name || 'GPU'} · 显存已用 ${fmtBytes(gpu.memUsedBytes)} / ${fmtBytes(gpu.memTotalBytes)}`
+      : '显存不可用（未检测到 NVIDIA GPU 或 nvidia-smi 不可用）';
   }
 
   return {

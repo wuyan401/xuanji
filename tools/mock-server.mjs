@@ -293,6 +293,9 @@ const systemState = {
   cpu: 0.23,
   perCore: Array.from({ length: CORES }, () => rr(0.08, 0.42)),
   memPct: 0.61,
+  gpuPct: 0.58,
+  gpuUtil: 0.18,
+  gpuTemp: 57,
   rx: 180_000,
   tx: 42_000,
   totalRx: 9_800_000_000,
@@ -313,8 +316,14 @@ function systemSnapshot() {
   systemState.totalRx += systemState.rx * 2;
   systemState.totalTx += systemState.tx * 2;
   systemState.uptime += 2;
+  // v2.8 显存/GPU：随机游走，模拟笔记本独显（8GB）
+  systemState.gpuPct = Math.max(0.18, Math.min(0.92, systemState.gpuPct + rr(-0.02, 0.02) + 0.01 * Math.sin(t / 9)));
+  systemState.gpuUtil = Math.max(0, Math.min(0.98, systemState.gpuUtil + rr(-0.06, 0.06)));
+  systemState.gpuTemp = Math.max(38, Math.min(86, systemState.gpuTemp + rr(-1.2, 1.2)));
   const totalBytes = 68_719_476_736;
   const usedBytes = Math.round(totalBytes * systemState.memPct);
+  const gpuTotalBytes = 8_589_934_592;
+  const gpuUsedBytes = Math.round(gpuTotalBytes * systemState.gpuPct);
   const procs = PROC_NAMES.map((name, idx) => {
     // 贴近真实桌面：少数进程占几个百分点，绝大多数 <1%，尾部是「沉积」进程。
     const busy = idx < 9 ? rr(3.5, 26) : idx > 54 ? rr(0, 0.25) : rr(0.1, 2.6);
@@ -348,6 +357,15 @@ function systemSnapshot() {
     procs,
     uptimeSec: systemState.uptime,
     battery: { percent: 87, charging: true },
+    gpu: {
+      name: 'NVIDIA GeForce RTX 4060 Laptop GPU',
+      memTotalBytes: gpuTotalBytes,
+      memUsedBytes: gpuUsedBytes,
+      memPct: Number(systemState.gpuPct.toFixed(4)),
+      utilPct: Number(systemState.gpuUtil.toFixed(4)),
+      tempC: Math.round(systemState.gpuTemp),
+      source: 'nvidia-smi',
+    },
   };
   systemHistory.push(snap);
   while (systemHistory.length > 120) systemHistory.shift();

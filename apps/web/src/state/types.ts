@@ -224,6 +224,22 @@ export interface BatteryInfo {
   charging: boolean;
 }
 
+/**
+ * 显存 / GPU（v2.8）。
+ * - memPct / utilPct 均为 0..1（HUD 显示时乘 100）
+ * - tempC 为摄氏度整数
+ * - source 标记采样方式（目前为 'nvidia-smi'），不可用时整个 gpu 为 null
+ */
+export interface GpuInfo {
+  name: string;
+  memTotalBytes: number;
+  memUsedBytes: number;
+  memPct: number;
+  utilPct: number;
+  tempC: number;
+  source: string;
+}
+
 export interface SystemSnapshot {
   /** epoch ms */
   at: number;
@@ -235,6 +251,8 @@ export interface SystemSnapshot {
   procs: ProcInfo[];
   uptimeSec: number;
   battery: BatteryInfo | null;
+  /** 显存/GPU；没有 NVIDIA 工具或读取失败时为 null（不伪造 0） */
+  gpu: GpuInfo | null;
 }
 
 export interface SystemFrame extends SystemSnapshot {
@@ -266,6 +284,7 @@ export const EMPTY_SYSTEM: SystemSnapshot = {
   procs: [],
   uptimeSec: 0,
   battery: null,
+  gpu: null,
 };
 
 export const EMPTY_SNAPSHOT: ClientFleetSnapshot = {

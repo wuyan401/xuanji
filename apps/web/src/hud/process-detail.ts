@@ -131,6 +131,8 @@ export function createProcessDetail(parent: HTMLElement, opts: ProcessDetailOpti
   const cpuRow = infoRow('CPU 总负载');
   const memRow = infoRow('内存占用');
   const threadsRow = infoRow('线程总数');
+  // v2.8 总览新增：显存（整机 GPU 显存，null 显示「—」；不做单进程显存）
+  const gpuRow = infoRow('显存');
   // v2.6 总览新增：入口流量 / 在途包（scene 调试遥测，防御式取值）
   const entryFlowRow = infoRow('入口流量');
   const packetsRow = infoRow('在途包');
@@ -139,6 +141,7 @@ export function createProcessDetail(parent: HTMLElement, opts: ProcessDetailOpti
     cpuRow.row,
     memRow.row,
     threadsRow.row,
+    gpuRow.row,
     entryFlowRow.row,
     packetsRow.row,
   ]);
@@ -257,6 +260,15 @@ export function createProcessDetail(parent: HTMLElement, opts: ProcessDetailOpti
       memRow.value.title = `占物理内存 ${fmtPct(agg.memPct ?? 0)} · 共 ${fmtBytes(totalMem)}`;
     }
     setText(threadsRow.value, agg.count > 0 ? String(agg.threadsSum) : '—');
+    // v2.8：显存（整机 GPU；null 不写 0）
+    const gpu = snapshot?.gpu ?? null;
+    if (gpu && gpu.memTotalBytes > 0) {
+      setText(gpuRow.value, `${fmtBytes(gpu.memUsedBytes)} / ${fmtBytes(gpu.memTotalBytes)} · ${fmtPct(gpu.memPct)}`);
+      gpuRow.value.title = `${gpu.name || 'GPU'} · 利用率 ${fmtPct(gpu.utilPct)} · ${Math.round(gpu.tempC)}°C`;
+    } else {
+      setText(gpuRow.value, '—');
+      gpuRow.value.title = '显存不可用（未检测到 NVIDIA GPU 或 nvidia-smi 不可用）';
+    }
     // v2.6：入口流量 / 在途包来自 scene 调试遥测（2s 帧节流，取不到显示「—」）
     const debug = readProcessesDebug();
     const entryFlow = debug && typeof debug.entryFlow === 'number' ? debug.entryFlow : null;

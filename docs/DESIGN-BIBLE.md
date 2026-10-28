@@ -1011,4 +1011,38 @@ r      = R * (0.30 + (1 - weight) * 0.62)      // 0.30R（最重/最新）～0.9
 
 ---
 
-*DESIGN-BIBLE v2.7 · 2026-10-28 · 璇玑 XUANJI · 本机智能体观测所*
+## §27 v2.8 星体新鲜度与显存（2026-10-28）
+
+### 27.1 智能体视图：星体「新鲜度」尺寸规则（叠加，不替换）
+
+原有「星半径 ∝ 文量」规则不变，**再乘一个新鲜度倍数**：
+
+- `age = now - lastActivityAt`（该会话最近一次活动时间）
+- `recency = clamp01(exp(-age / τ))`，`τ = 2700s`（45 分钟）：1h ≈ 0.26、3h ≈ 0.02
+- `targetFresh = 0.55 + 0.75 * recency`（范围 **0.55–1.30**）
+- `shownFresh` 用 `damp(λ=1.1)` 追随 `targetFresh`，单帧变化 ≤0.02 —— **平滑动画，禁止瞬跳**
+- `starR = baseR * shownFresh`
+
+含义：刚被使用过的球放大到 1.30×，越久没被用的越小（最低 0.55×，不会消失）；ended 老会话自然缩小。新鲜度只改尺寸，不改轨道/层级/颜色。
+
+### 27.2 显存 / GPU（整机 + 百工）
+
+- 数据（`GpuInfo`）：`{ name, memTotalBytes, memUsedBytes, memPct, utilPct, tempC, source }`；由 `nvidia-smi --query-gpu=...` 采样，每 2 个采样周期取一次并缓存（约每秒一次，避免拖慢 2s 采样循环）；没有 NVIDIA 工具 → `gpu: null`。
+- **整机视图**：《机枢》面板新增「显存」「GPU」两行（显存 used/total + 百分比 + 60s sparkline；GPU 利用率 · 温度 · 名称短）；整机顶栏指标组加入「显存 xx%」。
+- **百工视图**：顶栏指标组加入「显存 xx%」；《器牒》总览新增「显存」行（used/total · pct）。单进程 GPU 显存无法可靠获取，**不伪造**到芯片上。
+- 整机核心转速因子改为 `busyN = max(cpuN, gpuN, 0.25)`（GPU 忙时核心也加速）。
+- 不可用态：显示「显存不可用」，绝不写 0。
+
+### 27.3 验收（`node tools/qa-v28.mjs`）
+
+1. `gpu.api`：`/api/system` 有 `gpu`，`name` 非空、`memTotalBytes > 0`、`memPct/utilPct` ∈ 0..1、`tempC > 0`；
+2. `gpu.history`：`/api/system/history` 末帧含 `gpu`；
+3. `hud.systemGpu`：整机《机枢》出现「显存」「GPU」行，数值非 `—`；
+4. `hud.procGpu`：百工顶栏出现「显存」，且《器牒》总览含「显存」；
+5. `stars.freshness`：`debugStarFreshness()` 的 `ratio ≥ 1.25`（近期活动星明显大于久置星）且 `maxStepRatio ≤ 0.03`（尺寸是平滑动画）；
+6. `perf`：整机/百工 sceneMs ≤8；
+7. `errors`：console/page/request 零错误。
+
+---
+
+*DESIGN-BIBLE v2.8 · 2026-10-28 · 璇玑 XUANJI · 本机智能体观测所*

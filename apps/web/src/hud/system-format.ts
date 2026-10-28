@@ -61,12 +61,20 @@ export function fmtRateCompact(bps: number | null | undefined): string {
   return `${Math.round(bps)}B/s`;
 }
 
-/** 紧凑上下行（顶栏用）→「↓405k ↑27k」 */
+/** 极紧凑速率（顶栏网速用）→「405k」「1.2M」；拿不到 →「—」 */
+export function fmtRateTiny(bps: number | null | undefined): string {
+  if (bps == null || !Number.isFinite(bps) || bps < 0) return '—';
+  if (bps >= 1024 * 1024) return `${(bps / (1024 * 1024)).toFixed(bps >= 10 * 1024 * 1024 ? 0 : 1)}M`;
+  if (bps >= 1024) return `${Math.round(bps / 1024)}k`;
+  return `${Math.round(bps)}B`;
+}
+
+/** 极紧凑上下行（顶栏用，单位见 title）→「↓405k ↑27k」 */
 export function fmtNetPairCompact(
   rxBps: number | null | undefined,
   txBps: number | null | undefined,
 ): string {
-  const rx = fmtRateCompact(rxBps);
-  const tx = fmtRateCompact(txBps);
+  const rx = fmtRateTiny(rxBps);
+  const tx = fmtRateTiny(txBps);
   return `↓${rx} ↑${tx}`;
 }

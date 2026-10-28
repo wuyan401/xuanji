@@ -5,7 +5,7 @@
 
 import { COLORS, FONTS, withAlpha } from '../design/tokens';
 import { rgba } from './paint';
-import { TAU, clamp, clamp01, lerp } from '../lib/math';
+import { TAU, clamp, clamp01, damp, lerp } from '../lib/math';
 import { rand01 } from './rand';
 import { textScale, textScreenGrow, type Env, type View } from './types';
 import type { SystemSnapshot } from '../state/types';
@@ -23,6 +23,20 @@ const SG = {
   tickIn: 0.82,
   tickOut: 0.9,
 };
+
+/**
+ * v2.8 §27.2：整机核心忙闲因子。
+ * gpuN = clamp01(utilPct*0.6 + memPct*0.4)；gpu 为 null 时退回 cpuN；
+ * busyN = max(cpuN, gpuN, 0.25)（下限 0.25，避免空载时核心完全不动）。
+ */
+export function coreBusyN(
+  cpuUsage: number,
+  gpu: { utilPct: number; memPct: number } | null,
+): number {
+  const cpuN = clamp01(cpuUsage);
+  const gpuN = gpu ? clamp01(gpu.utilPct * 0.6 + gpu.memPct * 0.4) : cpuN;
+  return Math.max(cpuN, gpuN, 0.25);
+}
 
 interface ProcView {
   pid: number;
@@ -135,6 +149,9 @@ export class SystemPlate {
   /** v2.2 跨档交叉淡入：旧拨盘缓存 180ms 淡出（§21.1 禁止清晰度硬切） */
   private fadeCache: { canvas: HTMLCanvasElement; size: number; dpr: number; key: string } | null = null;
   private fadeAt = -1e9;
+  /** v2.8 §27.2：中枢核心的忙闲因子与累计转角（busyN = max(cpuN,gpuN,0.25)） */
+  private hubBusy = 0.25;
+  private hubSpin = 0;
 
   setSystem(snapshot: SystemSnapshot | null): void {
     if (!snapshot) {
@@ -324,6 +341,9 @@ export class SystemPlate {
 
     const d = this.disp;
     const reveal = opts.reveal;
+    // v2.8 §27.2：核心忙闲因子 = max(cpuN, gpuN, 0.25)；gpu 缺失时退回 CPU
+    this.hubBusy = damp(this.hubBusy, coreBusyN(d.cpu, env.system?.gpu ?? null), 2.5, env.dt);
+    this.hubSpin = (this.hubSpin + env.dt * (0.06 + 0.42 * this.hubBusy)) % TAU;
     const layerA = (lo: number, hi: number): number => clamp01((reveal - lo) / (hi - lo));
     const hubA = layerA(0, 0.28);
     const memA = layerA(0.12, 0.42);
@@ -455,7 +475,7 @@ export class SystemPlate {
     const n = cores.length;
     ctx.lineCap = 'round';
     for (let i = 0; i < n; i += 1) {
-      const a = (i / n) * TAU + env.skyRot * 0.15;
+      const a = (i / n) * TAU + this.hubSpin;
       const v = clamp01(cores[i] ?? 0);
       const len = hubR * (0.2 + 0.62 * v);
       const sin = Math.sin(a);

@@ -56,7 +56,8 @@
 }
 
 @media (max-width: 1180px) {
-  .xj-hud[data-view='processes'] .tb-metric--proc-mem {
+  .xj-hud[data-view='processes'] .tb-metric--proc-mem,
+  .xj-hud[data-view='processes'] .tb-metric--proc-gpu {
     display: none;
   }
 }
@@ -626,7 +627,8 @@
 @media (max-width: 720px) {
   /* 顶栏只留「进程 N · CPU x%」 */
   .xj-hud[data-view='processes'] .tb-metric--proc-mem,
-  .xj-hud[data-view='processes'] .tb-metric--proc-threads {
+  .xj-hud[data-view='processes'] .tb-metric--proc-threads,
+  .xj-hud[data-view='processes'] .tb-metric--proc-gpu {
     display: none;
   }
 

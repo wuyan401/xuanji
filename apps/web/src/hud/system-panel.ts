@@ -104,7 +104,7 @@ export function createSystemPanel(parent: HTMLElement): SystemPanelHandle {
     el('span', { class: 'sys-stamp', text: '机枢', attrs: { 'aria-hidden': 'true' } }),
     el('div', { class: 'sys-head-text' }, [
       el('h2', { class: 'sys-title', text: '机枢' }),
-      el('span', { class: 'sys-sub', text: '整机仪象 · 处理器 / 内存 / 磁盘 / 网络' }),
+      el('span', { class: 'sys-sub', text: '整机仪象 · 处理器 / 内存 / 显存 / 磁盘 / 网络' }),
     ]),
     meta,
   ]);
@@ -139,7 +139,19 @@ export function createSystemPanel(parent: HTMLElement): SystemPanelHandle {
   const rxRow = makeRow('网络 ↓', true, '下行速率（近 2s 采样）', 'var(--cold-300)');
   const txRow = makeRow('网络 ↑', true, '上行速率（近 2s 采样）', 'var(--indigo-400)');
 
+  // v2.8：显存 / GPU 两行。外层 data-hud="system-gpu" 供 QA；
+  // gpu 为 null 时显示「显存不可用 / GPU 不可用」，数值位「—」，绝不写 0。
+  const vramRow = makeRow('显存', false, '显存占用（GPU 专用显存）', 'var(--patina-300)');
+  const gpuRow = makeRow('GPU', false, 'GPU 利用率 / 温度 / 型号', 'var(--theme-signal)');
+  gpuRow.row.classList.add('sys-row--gpu');
+  gpuRow.spark.svg.style.display = 'none';
+  const gpuSection = el('div', { class: 'sys-gpu', attrs: { 'data-hud': 'system-gpu', 'aria-label': '显存与 GPU' } }, [
+    vramRow.row,
+    gpuRow.row,
+  ]);
+
   for (const item of [cpuRow, memRow, diskCRow, diskDRow, rxRow, txRow]) body.append(item.row);
+  body.append(gpuSection);
 
   const foot = el('footer', { class: 'sys-foot', text: '已行 —' });
   const root = el('aside', {
@@ -231,6 +243,29 @@ export function createSystemPanel(parent: HTMLElement): SystemPanelHandle {
     setText(txRow.refs.value, fmtRate(snapshot.net.txBps));
     setText(txRow.refs.sub, `累计 ${fmtBytes(snapshot.net.totalTxBytes)}`);
     pushSpark(txRow.spark, snapshot.net.txBps);
+
+    // v2.8：显存 / GPU（null = 显存不可用，不写 0）
+    const gpu = snapshot.gpu;
+    if (gpu && gpu.memTotalBytes > 0) {
+      setText(vramRow.refs.value, fmtPct(gpu.memPct));
+      setText(vramRow.refs.sub, `${fmtBytes(gpu.memUsedBytes)} / ${fmtBytes(gpu.memTotalBytes)}`);
+      pushSpark(vramRow.spark, Number.isFinite(gpu.memPct) ? gpu.memPct : null);
+      setText(
+        gpuRow.refs.value,
+        `利用率 ${fmtPct(gpu.utilPct)} · ${Math.round(gpu.tempC)}°C`,
+      );
+      setText(gpuRow.refs.sub, gpu.name || 'GPU');
+      gpuRow.row.title = `${gpu.name || 'GPU'} · 显存 ${fmtBytes(gpu.memUsedBytes)} / ${fmtBytes(gpu.memTotalBytes)} · 利用率 ${fmtPct(gpu.utilPct)} · ${Math.round(gpu.tempC)}°C（${gpu.source || 'nvidia-smi'}）`;
+      vramRow.spark.svg.style.display = '';
+    } else {
+      setText(vramRow.refs.value, '—');
+      setText(vramRow.refs.sub, '显存不可用');
+      pushSpark(vramRow.spark, null);
+      setText(gpuRow.refs.value, '—');
+      setText(gpuRow.refs.sub, 'GPU 不可用');
+      gpuRow.row.title = '未检测到 NVIDIA GPU 或 nvidia-smi 不可用';
+      vramRow.spark.svg.style.display = 'none';
+    }
 
     const battery = fmtBattery(snapshot);
     setText(

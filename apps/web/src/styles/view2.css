@@ -494,6 +494,65 @@
   transition: none;
 }
 
+/* v2.8：显存 / GPU 两行（外层 data-hud="system-gpu"，随 2 列 / 1 列布局自适应） */
+.sys-gpu {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 26px;
+  row-gap: 2px;
+}
+.sys-gpu .sys-row {
+  border-bottom-color: transparent;
+}
+.sys-row--gpu {
+  grid-template-columns: minmax(0, auto) 1fr;
+  grid-template-areas:
+    'label value'
+    'sub sub';
+}
+.sys-row--gpu .sys-spark {
+  display: none;
+}
+.sys-row--gpu .sys-value {
+  justify-self: end;
+}
+
+/* 整机顶栏「显存」：≤1360 与磁盘/网速同规则收掉（磁盘让位给 5 项新布局） */
+@media (max-width: 1360px) {
+  .tb-metrics--system .tb-metric--gpu,
+  .tb-metrics--system .tb-metric--disk {
+    display: none;
+  }
+}
+
+@media (max-width: 1180px) {
+  .tb-metrics--system .tb-metric--net {
+    display: none;
+  }
+}
+
+/* v2.8：整机顶栏有 5 项指标（CPU/内存/磁盘/显存/网速），
+   ≤1700 收窄间距并隐藏分隔线与日期，保证 1440/1600 下 CPU 不被裁切。 */
+@media (max-width: 1700px) {
+  .tb-metrics--system {
+    gap: 6px;
+  }
+  .tb-metrics--system .tb-sep {
+    display: none;
+  }
+  .tb-metrics--system .tb-metric-label {
+    font-size: 10.5px;
+    letter-spacing: 0.01em;
+  }
+  .tb-metrics--system .tb-metric-value {
+    font-size: 11px;
+  }
+  .tb-date {
+    display: none;
+  }
+}
+
 /* ══ 8. 《器录》——整机视图右侧进程表 ═══════════════════════ */
 .pr-wrap {
   position: absolute;
@@ -776,6 +835,7 @@
   }
   .tb-metrics--system .tb-metric--disk,
   .tb-metrics--system .tb-metric--net,
+  .tb-metrics--system .tb-metric--gpu,
   .tb-metrics--system .tb-metric--net ~ .tb-sep {
     display: none;
   }
@@ -831,6 +891,10 @@
     max-height: 70vh;
   }
   .sys-body {
+    grid-template-columns: 1fr;
+    column-gap: 0;
+  }
+  .sys-gpu {
     grid-template-columns: 1fr;
     column-gap: 0;
   }

@@ -223,6 +223,18 @@ export interface SceneHandle {
   debugStreams?(): StreamsDebug;
   /** v2.5 验收：百工（全进程）视图的机械盘面统计 */
   debugProcesses?(): ProcessesDebug;
+  /**
+   * v2.8 验收：星体「新鲜度」尺寸规则（越久没被使用越小、越大越高频使用；非覆盖原有体量规则）。
+   * recentAvg / oldAvg = 最近活跃星与久置星的实际半径÷基础半径的均值；ratio = recentAvg / oldAvg；
+   * maxStepRatio = 近 200 帧内单帧半径倍数最大变化（应很小，证明尺寸平滑动画而非瞬跳）。
+   */
+  debugStarFreshness?(): {
+    recentAvg: number;
+    oldAvg: number;
+    ratio: number;
+    maxStepRatio: number;
+    stars: number;
+  };
   /** v2.5：选中某个进程（pid）——点击芯片/工籍行时调用；null 清选 */
   selectProcess?(pid: number | null): void;
   /** v2.3 主题切换（canvas 侧 palette 已由 applyTheme 改写，调用方负责落 data-theme 与持久化） */

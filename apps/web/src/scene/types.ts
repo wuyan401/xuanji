@@ -1,7 +1,15 @@
 // XUANJI · 璇玑 — Scene 内部共享类型与几何常量（仅 scene/** 使用）。
 // 几何数值以 docs/DESIGN-BIBLE.md §18.1（v1.2 校准）为准，优先级高于 §6.1/§17.2。
 
-import type { AgentSession, AgentState, ConnectionState, SourceId, ViewKind, ViewMode } from '../state/types';
+import type {
+  AgentSession,
+  AgentState,
+  ConnectionState,
+  SourceId,
+  SystemSnapshot,
+  ViewKind,
+  ViewMode,
+} from '../state/types';
 import type { VisualParams } from '../design/params';
 import type { ThemeId } from '../design/themes';
 import { clamp } from '../lib/math';
@@ -49,6 +57,8 @@ export interface Env {
   sourceCount: number;
   /** 整机遥测是否可用（不可用时整盘 alpha .35 + 「遥测不可用」） */
   systemAvailable: boolean;
+  /** v2.8 §27.2：整机遥测快照（整机核心 GPU 忙闲因子用）；null = 无遥测 */
+  system: SystemSnapshot | null;
   /** v2.2：缩放手势进行中或缩放尚未收束（此时跳过景深副本/辉光 blur 等重型后期） */
   zooming: boolean;
   /**
@@ -150,6 +160,8 @@ export interface StarNode {
   radiusTarget: number;
   /** 基础视觉半径（css px） */
   r: number;
+  /** v2.8 §27.1：新鲜度尺寸倍数（0.55 久置 → 1.30 刚活动；平滑过渡，单帧变化 ≤0.02） */
+  shownFresh: number;
   /** 0..1 点火 / 0..1 熄灭动画进度 */
   appear: number;
   vanishing: boolean;

@@ -78,6 +78,18 @@ export function normalizeSample(raw, now = Date.now()) {
           charging: Boolean(raw.battery.charging),
         }
       : null,
+    gpu:
+      raw.gpu && typeof raw.gpu === 'object'
+        ? {
+            name: String(raw.gpu.name ?? 'GPU').slice(0, 80),
+            memTotalBytes: Math.round(num(raw.gpu.memTotalBytes)),
+            memUsedBytes: Math.round(num(raw.gpu.memUsedBytes)),
+            memPct: Math.round(clamp01(raw.gpu.memPct) * 10_000) / 10_000,
+            utilPct: Math.round(clamp01(raw.gpu.utilPct) * 10_000) / 10_000,
+            tempC: Math.round(num(raw.gpu.tempC)),
+            source: String(raw.gpu.source ?? 'unknown').slice(0, 24),
+          }
+        : null,
   };
   return sample;
 }
@@ -94,6 +106,7 @@ export function createEmptySystem() {
     procs: [],
     uptimeSec: 0,
     battery: null,
+    gpu: null,
   };
 }
 
