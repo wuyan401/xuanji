@@ -3,7 +3,7 @@
 // 具体几何/星/事件特效分别在 instrument / stars / effects 中实现。
 // 设计依据：docs/DESIGN-BIBLE.md §6–§8、§13、§17（v1.1）；契约：src/app/contracts.ts。
 
-import type { SceneCallbacks, SceneHandle, SceneInitOptions, StreamsDebug } from '../app/contracts';
+import type { SceneCallbacks, SceneHandle, SceneInitOptions, ProcessesDebug, StreamsDebug } from '../app/contracts';
 import type {
   AstroEvent,
   ClientFleetSnapshot,
@@ -46,6 +46,8 @@ import {
   type TickCache,
 } from './instrument';
 import { drawQuietHorizon, PostSystem } from './post';
+// —— v2.5 §24：第三视图「百工 · 器群」（全进程机械化盘面）
+import { ProcessesPlate } from './processes';
 import { StarSystem } from './stars';
 import { WorkStreamSystem } from './streams';
 import { CATEGORY_ORDER, GEOM, textScale, textScreenGrow, type BeatView, type Env, type StarNode, type View } from './types';
@@ -70,10 +72,18 @@ interface SavedSystemCamera {
   dragY: number;
 }
 
+interface SavedProcessCamera {
+  zoomUser: number;
+  dragX: number;
+  dragY: number;
+}
+
 interface SavedCamera {
   view: ViewKind;
   agents: SavedAgentCamera | null;
   system: SavedSystemCamera | null;
+  /** v2.5 §24.8：百工视图也有自己的取景记忆（0.8–4.0 缩放 / ±0.8R 拖拽） */
+  processes: SavedProcessCamera | null;
 }
 
 
@@ -113,8 +123,9 @@ export function createScene(
   let autoPaused = false;
   let disposed = false;
 
-  // —— v2.0：同一台仪器，两套盘面
-  let currentView: ViewKind = opts.view === 'system' ? 'system' : 'agents';
+  // —— v2.0：同一台仪器，三套盘面（v2.5 起加「百工 · 器群」进程视图）
+  let currentView: ViewKind =
+    opts.view === 'system' ? 'system' : opts.view === 'processes' ? 'processes' : 'agents';
   let systemSnapshot: SystemSnapshot | null = null;
   let sourceFilter: SourceId | null = null;
   let sourceCount = 0;
@@ -195,6 +206,8 @@ export function createScene(
   const air = new AirSystem();
   const sky = new SkySystem();
   const plate = new SystemPlate();
+  // —— v2.5 §24：百工 · 器群（本机全部进程，机械盘面）
+  const processes = new ProcessesPlate();
   // —— v2.3 §22.4/§22.6：机器运转 + 复合核心
   const fx = new FxSystem();
   const core = new CoreSystem();
@@ -314,9 +327,10 @@ export function createScene(
 
   function saveCameraMemory(): void {
     if (disposed || restoring) return;
-    const base: SavedCamera = savedCam ?? { view: currentView, agents: null, system: null };
+    const base: SavedCamera = savedCam ?? { view: currentView, agents: null, system: null, processes: null };
     base.view = currentView;
     if (currentView === 'agents') base.agents = captureAgentsCamera();
+    else if (currentView === 'processes') base.processes = captureSystemCamera();
     else base.system = captureSystemCamera();
     savedCam = base;
     persistCameraMemory();
@@ -335,8 +349,9 @@ export function createScene(
   function clearCameraMemory(view: ViewKind): void {
     if (!savedCam) return;
     if (view === 'agents') savedCam.agents = null;
+    else if (view === 'processes') savedCam.processes = null;
     else savedCam.system = null;
-    if (!savedCam.agents && !savedCam.system) {
+    if (!savedCam.agents && !savedCam.system && !savedCam.processes) {
       savedCam = null;
       try {
         window.localStorage.removeItem(CAMERA_KEY);
@@ -371,8 +386,15 @@ export function createScene(
       const raw = window.localStorage.getItem(CAMERA_KEY);
       if (!raw) return null;
       const parsed = JSON.parse(raw) as Partial<SavedCamera> | null;
-      if (!parsed || (parsed.view !== 'agents' && parsed.view !== 'system')) return null;
-      const out: SavedCamera = { view: parsed.view, agents: parsed.agents ?? null, system: parsed.system ?? null };
+      if (!parsed || (parsed.view !== 'agents' && parsed.view !== 'system' && parsed.view !== 'processes')) {
+        return null;
+      }
+      const out: SavedCamera = {
+        view: parsed.view,
+        agents: parsed.agents ?? null,
+        system: parsed.system ?? null,
+        processes: parsed.processes ?? null,
+      };
       savedCam = out;
       return out;
     } catch {
@@ -385,7 +407,15 @@ export function createScene(
     restoring = true;
     const now = performance.now();
     const lim = env.R * 1.2;
-    if (currentView === 'system') {
+    if (currentView === 'processes') {
+      // v2.5 §24.8：百工视图的取景记忆（0.8–4.0 缩放 / ±0.8R 拖拽）
+      const p = saved.processes;
+      if (p) {
+        camera.zoomUser = clamp(p.zoomUser, 0.8, 4.0);
+        camera.dragX = clamp(p.dragX, -env.R * 0.8, env.R * 0.8);
+        camera.dragY = clamp(p.dragY, -env.R * 0.8, env.R * 0.8);
+      }
+    } else if (currentView === 'system') {
       const s = saved.system;
       if (s) {
         camera.zoomUser = clamp(s.zoomUser, 0.75, 6.0);
@@ -481,6 +511,8 @@ export function createScene(
     if (fleet) micro.updateStats(fleet, env);
     if (fleet) fx.updateStats(fleet, stars.arcs, env);
     plate.build(env, tierSharp());
+    // —— v2.5 §24：百工盘面的静态层（工程网格/三轨/总线环）随视图/主题重烘
+    processes.build(env, tierSharp());
     // §22.6：复合核心的光点/短弧数量随 quality 重生成
     core.build(env);
     builtTier = zoomTier;
@@ -500,6 +532,7 @@ export function createScene(
     env.view = next;
     if (next === 'system') {
       // 整机盘面：中心锁定 + 静态取景（只吃用户缩放），暂停自动导播
+      camera.setViewLimits(0.75, 6.0, null);
       camera.setStaticZoom(0.98);
       camera.setStaticFrame(true);
       camera.setMode('survey', { immediate: true, auto: false }, now);
@@ -511,7 +544,21 @@ export function createScene(
         camera.dragY = clamp(saved.dragY, -env.R * 1.2, env.R * 1.2);
       }
       plate.build(env, tierSharp());
+    } else if (next === 'processes') {
+      // v2.5 §24.8：百工盘面 = 固定居中构图 + 静态取景（只吃用户缩放/拖拽，无自动运镜）
+      camera.setViewLimits(0.8, 4.0, 0.8);
+      camera.setStaticZoom(1.0);
+      camera.setStaticFrame(true);
+      camera.setMode('survey', { immediate: true, auto: false }, now);
+      const savedP = savedCam?.processes;
+      if (savedP) {
+        camera.zoomUser = clamp(savedP.zoomUser, 0.8, 4.0);
+        camera.dragX = clamp(savedP.dragX, -env.R * 0.8, env.R * 0.8);
+        camera.dragY = clamp(savedP.dragY, -env.R * 0.8, env.R * 0.8);
+      }
+      processes.build(env, tierSharp());
     } else {
+      camera.setViewLimits(0.75, 6.0, null);
       camera.setStaticZoom(null);
       camera.setStaticFrame(false);
       const snap = camSnapshots.agents;
@@ -867,6 +914,8 @@ export function createScene(
     sky.update(env);
     // —— §19.2：整机遥测 2s 一帧 → 平滑插值（观星时也保持显示值跟手，切回即用）
     plate.update(env);
+    // —— v2.5 §24：百工盘面（芯片数据插值 / 严格 1Hz 节拍 / 240ms 线性进出）
+    processes.update(env);
     // —— §22.4 机器运转 / §22.6 复合核心
     fx.update({ dt, now });
     core.update(env, view, beat.energy);
@@ -958,10 +1007,19 @@ export function createScene(
       plate.draw(c, view, { alpha: 1, reveal });
       c.restore();
     };
+    // 百工盘面（世界层：进程芯片 / 三轨 / 数据总线 / 机轴；无辉光、无暖金、无痕）
+    const drawProcessesPlate = (alpha: number, reveal: number): void => {
+      c.save();
+      c.globalAlpha = clamp01(alpha);
+      camera.apply(c, env);
+      processes.draw(c, env, 1, reveal);
+      c.restore();
+    };
 
     const drawPlate = (kind: ViewKind, alpha: number, reveal: number, scale: number): void => {
       if (scale === 1) {
         if (kind === 'agents') drawAgentsPlate(alpha, reveal);
+        else if (kind === 'processes') drawProcessesPlate(alpha, reveal);
         else drawSystemPlate(alpha, reveal);
         return;
       }
@@ -970,6 +1028,7 @@ export function createScene(
       c.scale(scale, scale);
       c.translate(-env.cx, -env.cy);
       if (kind === 'agents') drawAgentsPlate(alpha, reveal);
+      else if (kind === 'processes') drawProcessesPlate(alpha, reveal);
       else drawSystemPlate(alpha, reveal);
       c.restore();
     };
@@ -1002,6 +1061,11 @@ export function createScene(
       }
     } else if (currentView === 'agents') {
       drawAgentsPlate(1, 1);
+    } else if (currentView === 'processes') {
+      const k = easeInOutCubic(env.grow);
+      drawProcessesPlate(1, k);
+      // §24.4：扫描线/无遥测提示是屏幕层（不进世界变换，1px 硬线不随缩放变粗）
+      processes.drawScan(c, env, k, k);
     } else {
       drawSystemPlate(1, easeInOutCubic(env.grow));
     }
@@ -1023,15 +1087,17 @@ export function createScene(
       if (currentView === 'agents') {
         stars.drawGlow(glowCtx, view, dimOthers * gdim, view.focusId, camera);
         effects.drawGlow(glowCtx, view, dim);
-      } else {
+      } else if (currentView === 'system') {
         plate.drawGlow(glowCtx, view, 1);
       }
+      // 百工盘面没有辉光：机械盘面只允许 1px 硬边（§24.1 / §24.7 反模式）
       glowCtx.restore();
       post.drawGlow(c, env, glowCanvas);
     }
 
-    // —— 屏幕空间世界内标注（星名/引线 / 进程名）
+    // —— 屏幕空间世界内标注（星名/引线 / 进程名 / 整机部件名）
     if (currentView === 'agents') stars.drawLabels(c, env, view, camera);
+    else if (currentView === 'processes') processes.drawLabels(c, env, camera);
     else plate.drawLabels(c, env, camera);
 
     // —— 后期：暗角 + 颗粒 + 错误侧闪
@@ -1174,6 +1240,12 @@ export function createScene(
     }
     // hover 勘验（触控不显示 hover）
     if (pointers.size === 0 && e.pointerType === 'mouse') {
+      if (currentView === 'processes') {
+        // v2.5 §24.8：百工盘面只做芯片拾取（无星、无引线）
+        const proc = processes.hoverAt(env, camera, p.x, p.y);
+        canvas.style.cursor = proc ? 'pointer' : 'grab';
+        return;
+      }
       if (currentView === 'system') {
         const proc = plate.hoverAt(env, camera, p.x, p.y);
         plate.hoverPid = proc ? proc.pid : null;
@@ -1204,6 +1276,12 @@ export function createScene(
       if (!dragMoved && quick && currentView === 'agents') {
         const id = pickAt(p.x, p.y);
         applyPick(id, false);
+      } else if (!dragMoved && quick && currentView === 'processes') {
+        // v2.5 §24.8：点芯片 = 选中（同步给装配层 → HUD「工籍」展开）
+        const pid = processes.pick(env, camera, p.x, p.y);
+        processes.setSelected(pid);
+        camera.markManual(performance.now());
+        cb.onPickProcess?.(pid);
       }
       primaryPointer = -1;
       camera.endDrag();
@@ -1220,6 +1298,7 @@ export function createScene(
       hoveredId = null;
       view.hovered = null;
     }
+    processes.hoverPid = null;
     canvas.style.cursor = 'grab';
   }
 
@@ -1232,6 +1311,15 @@ export function createScene(
 
   function onDblClick(e: MouseEvent): void {
     const p = localPoint(e);
+    // v2.5 §24.8：百工盘面双击芯片 = 选中该进程；双击空白 = 复位取景
+    if (currentView === 'processes') {
+      const pid = processes.pick(env, camera, p.x, p.y);
+      if (pid !== null) {
+        processes.setSelected(pid);
+        cb.onPickProcess?.(pid);
+        return;
+      }
+    }
     const id = pickAt(p.x, p.y);
     if (id) applyPick(id, true);
     // §20.2：双击空白 = 复位（zoom 1.0 / pan 归零 / 云图）+ 清当前视图的视野记忆
@@ -1272,6 +1360,10 @@ export function createScene(
   rebuildCaches();
   if (currentView === 'system') {
     camera.setStaticZoom(0.98);
+    camera.setStaticFrame(true);
+  } else if (currentView === 'processes') {
+    camera.setViewLimits(0.8, 4.0, 0.8);
+    camera.setStaticZoom(1.0);
     camera.setStaticFrame(true);
   }
   // §20.3：刷新恢复上次视野（先恢复，URL 的 ?view 已通过 opts.view 生效，故 URL 优先）
@@ -1329,6 +1421,7 @@ export function createScene(
       if (disposed) return;
       systemSnapshot = snapshot;
       plate.setSystem(snapshot);
+      processes.setSystem(snapshot);
     },
     /** §19.1：来源筛选；null = 全部来源 */
     setSourceFilter(sourceId: string | null): void {
@@ -1436,8 +1529,17 @@ export function createScene(
         sceneMs: lastSceneMs,
       };
     },
-    /** §22.7 双主题：调色板由 main 的 applyTheme 写入 tokens；这里做 400ms 画布颜色插值与内部差异化 */
-    setTheme(next: ThemeId): void {
+    /** v2.5 §24.8：选中进程（HUD「工籍」行 / Esc 清选都走这里；不回传装配层，避免回声） */
+    selectProcess(pid: number | null): void {
+      if (disposed) return;
+      processes.setSelected(pid);
+    },
+    /** v2.5 验收（§24）：百工盘面实测值（芯片/轨道/流线/节拍/总线速/选中） */
+    debugProcesses(): ProcessesDebug {
+      const s = processes.stats;
+      return { ...s, mode: currentView, sceneMs: lastSceneMs };
+    },
+    /** §22.7 双主题：调色板由 main 的 applyTheme 写入 tokens；这里做 400ms 画布颜色插值与内部差异化 */    setTheme(next: ThemeId): void {
       if (disposed || next === theme) return;
       // 先把旧主题的当前画面抓成快照，新帧压上去 400ms 淡出（颜色插值，不闪白、不硬切）
       try {

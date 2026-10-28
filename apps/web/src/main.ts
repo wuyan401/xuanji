@@ -13,7 +13,7 @@ import type {
   ViewKind,
   ViewMode,
 } from './state/types';
-import { VIEW_KIND_LABEL, VIEW_MODE_LABEL, VIEW_MODE_ORDER } from './state/types';
+import { VIEW_KIND_LABEL, VIEW_KIND_ORDER, VIEW_MODE_LABEL, VIEW_MODE_ORDER } from './state/types';
 import {
   applyUrlParamOverrides,
   applyUrlPreset,
@@ -63,7 +63,7 @@ function readUrl(): AppUrl {
     demo: sp.get('demo') === '1',
     reducedMotion: mediaReduced || sp.get('motion') === 'off',
     reducedQuality: quality === 'low' || mediaReduced,
-    view: sp.get('view') === 'system' ? 'system' : 'agents',
+    view: sp.get('view') === 'system' ? 'system' : sp.get('view') === 'processes' ? 'processes' : 'agents',
     theme: isThemeId(themeParam) ? themeParam : loadTheme(),
   };
 }
@@ -113,10 +113,12 @@ function boot(): void {
   let selectedId: string | null = null;
   /** v2.1 视野主权（BIBLE §20）：默认由参数决定是否自动运镜；默认关。 */
   let autoPaused = params.autoDirector < 0.5;
-  /** 顶层视图：智能体浑仪 / 整机仪象 */
+  /** 顶层视图：智能体浑仪 / 整机仪象 / 百工器群 */
   let view: ViewKind = url.view;
   /** 来源筛选（null = 全部） */
   let sourceFilter: string | null = null;
+  /** v2.5 百工视图：选中的进程 pid（null = 未选） */
+  let selectedPid: number | null = null;
 
   function toast(text: string): void {
     hud.showToast(text);
@@ -162,20 +164,35 @@ function boot(): void {
     }
   }
 
-  /** 切换顶层视图（智能体 ⇄ 整机）。scene 负责 620ms 推拉，HUD 换铭牌。 */
+  /** 切换顶层视图（智能体 → 整机 → 百工，0 键循环）。scene 负责 620ms 推拉，HUD 换铭牌。 */
   function setView(next: ViewKind): void {
     if (view === next) return;
     view = next;
     scene?.setView?.(next);
     hud?.setView?.(next);
+    if (next === 'agents') {
+      toast(`${VIEW_KIND_LABEL.agents} · 本机全 agent`);
+      return;
+    }
+    const sys = store.getSystem();
+    scene?.setSystem?.(sys);
+    hud?.setSystem?.(sys);
     if (next === 'system') {
-      const sys = store.getSystem();
-      scene?.setSystem?.(sys);
-      hud?.setSystem?.(sys);
       toast(sys.available ? '整机仪象 · 处理器 / 内存 / 磁盘 / 网络' : '整机仪象 · 遥测不可用');
     } else {
-      toast(`${VIEW_KIND_LABEL.agents} · 本机全 agent`);
+      // v2.5 百工：全进程机械化盘面
+      scene?.selectProcess?.(selectedPid);
+      hud?.setProcessSelection?.(selectedPid);
+      toast(sys.available ? '百工 · 全进程运转 · 无悲无喜，只按指令' : '百工 · 进程遥测不可用');
     }
+  }
+
+  /** v2.5 百工视图：进程选中（场景芯片 ⇄ 《工籍》行 双向同步）。 */
+  function selectProcess(pid: number | null): void {
+    if (selectedPid === pid) return;
+    selectedPid = pid;
+    scene?.selectProcess?.(pid);
+    hud?.setProcessSelection?.(pid);
   }
 
   function setSourceFilter(sourceId: string | null): void {
@@ -209,6 +226,7 @@ function boot(): void {
     },
     {
       onPick: (id) => selectSession(id),
+      onPickProcess: (pid) => selectProcess(pid),
       onModeChange: (mode) => hud?.setMode(mode),
       onStats: (stats) => hud?.setStats(stats),
       onNotice: (text) => toast(text),
@@ -237,6 +255,7 @@ function boot(): void {
       onViewRequest: (next) => setView(next),
       onSourceFilter: (sourceId) => setSourceFilter(sourceId),
       onThemeRequest: (next) => setTheme(next),
+      onSelectProcess: (pid) => selectProcess(pid),
       onModeRequest: (mode) => setMode(mode),
       onParamsChange: (next) => {
         params = clampParams(next);
@@ -321,8 +340,8 @@ function boot(): void {
       const digit = /^Digit([1-7])$/.exec(e.code);
       if (digit) {
         e.preventDefault();
-        if (view === 'system') {
-          toast('整机视图只有缩放 · 0 返回观星');
+        if (view !== 'agents') {
+          toast(`${VIEW_KIND_LABEL[view]}视图只有缩放 · 0 返回观星`);
           return;
         }
         setMode(VIEW_MODE_ORDER[Number(digit[1]) - 1], true);
@@ -330,13 +349,18 @@ function boot(): void {
       }
       if (e.code === 'Digit0' || e.code === 'Numpad0') {
         e.preventDefault();
-        setView(view === 'agents' ? 'system' : 'agents');
+        // 0 循环切换：智能体 → 整机 → 百工 → 智能体
+        const at = VIEW_KIND_ORDER.indexOf(view);
+        setView(VIEW_KIND_ORDER[(at + 1) % VIEW_KIND_ORDER.length]);
         return;
       }
       if (e.code === 'Escape') {
         if (selectedId) {
           e.preventDefault();
           selectSession(null);
+        } else if (selectedPid !== null) {
+          e.preventDefault();
+          selectProcess(null);
         }
         return;
       }
@@ -409,7 +433,7 @@ function boot(): void {
           `frame  ${avg.toFixed(2)}ms  peak ${Math.max(...samples).toFixed(2)}ms`,
           `agents ${store.getSessions().length}   events ${store.getEvents().length}`,
           `conn   ${store.getConnection()}   source ${store.getSnapshot().source}`,
-          `view   ${view}   sys ${sys.available ? `cpu ${(sys.cpu.usage * 100).toFixed(0)}%` : '—'}`,
+          `view   ${view}   sys ${sys.available ? `cpu ${(sys.cpu.usage * 100).toFixed(0)}%` : '—'}   procs ${sys.procs?.length ?? 0}${selectedPid !== null ? ` sel ${selectedPid}` : ''}`,
           `auto   ${autoPaused ? 'paused' : 'on'}   theme ${theme}`,
         ].join('\n');
       }
@@ -465,6 +489,8 @@ function boot(): void {
       getSystem: () => store.getSystem(),
       getSystemHistory: () => store.getSystemHistory(),
       getTheme: () => theme,
+      getProcessSelection: () => selectedPid,
+      selectProcess,
       selectSession,
       setMode,
       setView,

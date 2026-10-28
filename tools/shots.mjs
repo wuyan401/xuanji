@@ -110,5 +110,15 @@ await shot('17-camera-locked.png', { viewport: { width: 1440, height: 900 }, dpr
   await page.waitForTimeout(1100);
 });
 
+// 32–35 v2.5 第三视图「百工 · 器群」（全进程机械化盘面）
+await shot('32-processes-desktop.png', { viewport: { width: 1440, height: 900 }, dpr: 1.75, url: '/?boot=0&view=processes', wait: 5200 });
+await shot('33-processes-selected.png', { viewport: { width: 1440, height: 900 }, dpr: 1.75, url: '/?boot=0&view=processes', wait: 5200 }, async (page) => {
+  const row = page.locator('[data-hud="process-list"] [data-pid]').first();
+  if (await row.count()) await row.click({ timeout: 4000 }).catch(() => {});
+  await page.waitForTimeout(1200);
+});
+await shot('34-processes-scifi.png', { viewport: { width: 1440, height: 900 }, dpr: 1.75, url: '/?boot=0&view=processes&theme=scifi', wait: 5200 });
+await shot('35-processes-mobile.png', { viewport: { width: 390, height: 844 }, dpr: 2, url: '/?boot=0&view=processes', wait: 5200 });
+
 await browser.close();
 console.log('done:', made.length, 'files');

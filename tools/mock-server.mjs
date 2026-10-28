@@ -266,7 +266,22 @@ function fleetFrame() {
 
 /* ------------------------------- 整机遥测 ------------------------------- */
 const CORES = 16;
-const PROC_NAMES = ['node.exe', 'chrome.exe', 'Hermes.exe', 'Code.exe', 'msedge.exe', 'RPGMV.exe', 'explorer.exe', 'SearchIndexer.exe', 'python.exe', 'Codex.exe'];
+// v2.5 百工视图：mock 也提供「全进程」规模的样本（72 个，名字都是通用 Windows 进程）
+const PROC_NAMES = [
+  'chrome.exe', 'msedge.exe', 'node.exe', 'python.exe', 'Code.exe', 'explorer.exe',
+  'svchost.exe', 'SearchIndexer.exe', 'MsMpEng.exe', 'RuntimeBroker.exe', 'audiodg.exe',
+  'conhost.exe', 'dllhost.exe', 'taskhostw.exe', 'sihost.exe', 'fontdrvhost.exe',
+  'ctfmon.exe', 'TextInputHost.exe', 'StartMenuExperienceHost.exe', 'ShellExperienceHost.exe',
+  'ApplicationFrameHost.exe', 'WmiPrvSE.exe', 'spoolsv.exe', 'dwm.exe', 'lsass.exe',
+  'services.exe', 'winlogon.exe', 'csrss.exe', 'smss.exe', 'System', 'Registry',
+  'Memory Compression', 'powershell.exe', 'pwsh.exe', 'WindowsTerminal.exe', 'git.exe',
+  'pythonw.exe', 'java.exe', 'bash.exe', 'ssh.exe', 'cargo.exe', 'rustc.exe', 'go.exe',
+  'dotnet.exe', 'nginx.exe', 'redis-server.exe', 'postgres.exe', 'mysqld.exe', 'docker.exe',
+  'com.docker.backend.exe', 'wsl.exe', 'Vmmem', 'OneDrive.exe', 'Steam.exe', 'steamwebhelper.exe',
+  'Discord.exe', 'QQ.exe', 'WeChat.exe', 'DingTalk.exe', 'Hermes.exe', 'Codex.exe',
+  'opencode.exe', 'claude.exe', 'RPGMV.exe', 'nw.exe', 'ffmpeg.exe', 'obs64.exe',
+  'Everything.exe', 'WinRAR.exe', 'Notepad.exe', 'Taskmgr.exe', 'cmd.exe', 'pycharm64.exe',
+];
 const systemState = {
   cpu: 0.23,
   perCore: Array.from({ length: CORES }, () => rr(0.08, 0.42)),
@@ -293,12 +308,18 @@ function systemSnapshot() {
   systemState.uptime += 2;
   const totalBytes = 68_719_476_736;
   const usedBytes = Math.round(totalBytes * systemState.memPct);
-  const procs = PROC_NAMES.map((name, idx) => ({
-    pid: 1200 + idx * 733,
-    name,
-    cpuPct: Number(Math.min(99, Math.max(0, systemState.perCore[idx % CORES] * 100 + rr(-6, 6))).toFixed(1)),
-    memBytes: Math.round(usedBytes * rr(0.01, 0.16)),
-  })).sort((a, b) => b.cpuPct - a.cpuPct);
+  const procs = PROC_NAMES.map((name, idx) => {
+    // 贴近真实桌面：少数进程占几个百分点，绝大多数 <1%，尾部是「沉积」进程。
+    const busy = idx < 9 ? rr(3.5, 26) : idx > 54 ? rr(0, 0.25) : rr(0.1, 2.6);
+    const memMb = idx < 9 ? rr(120, 900) : idx > 54 ? rr(4, 40) : rr(24, 260);
+    return {
+      pid: 1020 + idx * 137 + (idx % 7) * 11,
+      name,
+      cpuPct: Number(busy.toFixed(1)),
+      memBytes: Math.round(memMb * 1024 * 1024),
+      threads: Math.max(1, Math.round(idx < 9 ? rr(12, 90) : rr(1, 40))),
+    };
+  }).sort((a, b) => b.cpuPct - a.cpuPct);
   const snap = {
     type: 'system',
     at: now(),

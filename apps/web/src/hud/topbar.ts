@@ -51,6 +51,8 @@ export interface TopbarModel {
   systemAgeMs: number | null;
   /** 当前主题（v2.3 双主题：璇玑 / 深空） */
   theme: ThemeId;
+  /** v2.5 百工视图：进程聚合（进程数 / 平均 CPU / 内存占比 0..1 / 线程总和）；null = 无遥测 */
+  procAgg: { count: number; cpuPct: number; memPct: number; threads: number } | null;
 }
 
 export type AlarmKind = 'error' | 'offline' | 'reconnect';
@@ -121,6 +123,11 @@ export function createTopbar(container: HTMLElement, opts: TopbarOptions = {}): 
     class: 'tb-views',
     attrs: { role: 'group', 'aria-label': '视图切换', 'data-hud': 'view-tabs' },
   });
+  const VIEW_TAB_TITLE: Record<ViewKind, string> = {
+    agents: '观星 · 本机所有 agent（0 键切换）',
+    system: '观机 · 整机运行数据（0 键切换）',
+    processes: '百工 · 全进程机械运转（0 键切换）',
+  };
   function viewTab(view: ViewKind): HTMLButtonElement {
     const node = el('button', {
       class: 'tb-view',
@@ -128,7 +135,7 @@ export function createTopbar(container: HTMLElement, opts: TopbarOptions = {}): 
         type: 'button',
         'data-view': view,
         'aria-pressed': view === currentView ? 'true' : 'false',
-        title: view === 'agents' ? '观星 · 本机所有 agent（0 键切换）' : '观机 · 整机运行数据（0 键切换）',
+        title: VIEW_TAB_TITLE[view],
       },
       text: VIEW_KIND_LABEL[view],
     });
@@ -141,7 +148,9 @@ export function createTopbar(container: HTMLElement, opts: TopbarOptions = {}): 
   }
   const tabAgents = viewTab('agents');
   const tabSystem = viewTab('system');
-  viewTabs.append(tabAgents, el('span', { class: 'tb-view-sep', text: '｜', attrs: { 'aria-hidden': 'true' } }), tabSystem);
+  const tabProcesses = viewTab('processes');
+  const viewSep = (): HTMLElement => el('span', { class: 'tb-view-sep', text: '｜', attrs: { 'aria-hidden': 'true' } });
+  viewTabs.append(tabAgents, viewSep(), tabSystem, viewSep(), tabProcesses);
 
   const brand = el('div', { class: 'tb-brand' }, [
     el('h1', { class: 'tb-mark', text: '璇玑' }),
@@ -291,6 +300,29 @@ export function createTopbar(container: HTMLElement, opts: TopbarOptions = {}): 
     catchup,
   ]);
 
+  // ── 百工视图指标组（v2.5：进程 N · CPU x% · 内存 y% · 线程 N）──────────
+  function procMetric(label: string, title: string, extraClass = ''): { root: HTMLElement; value: HTMLElement } {
+    const value = el('span', { class: 'tb-metric-value', text: '—' });
+    const root = el('span', { class: `tb-metric tb-metric--proc ${extraClass}`.trim(), title }, [
+      el('span', { class: 'tb-metric-label', text: label }),
+      value,
+    ]);
+    return { root, value };
+  }
+  const procCountMetric = procMetric('进程', '本机进程数（采样器上报）');
+  const procCpuMetric = procMetric('CPU', '整机处理器占用（与整机视图同源）');
+  const procMemMetric = procMetric('内存', '物理内存占用', 'tb-metric--proc-mem');
+  const procThreadsMetric = procMetric('线程', '进程线程总数', 'tb-metric--proc-threads');
+  const procMetrics = el('div', { class: 'tb-metrics tb-metrics--processes' }, [
+    procCountMetric.root,
+    sep(),
+    procCpuMetric.root,
+    sep(),
+    procMemMetric.root,
+    sep(),
+    procThreadsMetric.root,
+  ]);
+
   const metrics = el('div', { class: 'tb-metrics tb-metrics--agents' }, [
     el('span', { class: 'tb-stars', attrs: { role: 'group', 'aria-label': '星数' } }, [
       liveM.root,
@@ -336,7 +368,7 @@ export function createTopbar(container: HTMLElement, opts: TopbarOptions = {}): 
   themeTabs.append(themeXu, themeScifi);
 
   const side = el('div', { class: 'tb-side' }, [themeTabs, badge, modeRoot, paused]);
-  const right = el('div', { class: 'tb-right' }, [metrics, sysMetrics, side]);
+  const right = el('div', { class: 'tb-right' }, [metrics, sysMetrics, procMetrics, side]);
 
   header.append(brand, clockBox, right);
   // scifi 主题的 6s 顶栏扫描线（1px，仅主题内启用；reduced-motion 关闭）
@@ -421,7 +453,11 @@ export function createTopbar(container: HTMLElement, opts: TopbarOptions = {}): 
     header.dataset.currentView = view;
     tabAgents.setAttribute('aria-pressed', view === 'agents' ? 'true' : 'false');
     tabSystem.setAttribute('aria-pressed', view === 'system' ? 'true' : 'false');
-    setText(subText, view === 'agents' ? '本机智能体观测所' : '整机仪象');
+    tabProcesses.setAttribute('aria-pressed', view === 'processes' ? 'true' : 'false');
+    setText(
+      subText,
+      view === 'agents' ? '本机智能体观测所' : view === 'system' ? '整机仪象' : '百工器群',
+    );
   }
 
   /** 只同步主题铭牌；<html data-theme> 与 localStorage 由 main 负责，HUD 只做回执。 */
@@ -502,6 +538,13 @@ export function createTopbar(container: HTMLElement, opts: TopbarOptions = {}): 
     setText(battery, batteryText ? `电池 ${batteryText}` : '');
     const stale = model.systemAgeMs != null && model.systemAgeMs > 6000;
     catchup.hidden = !stale;
+
+    // ── 百工视图：进程聚合（数据只来自 setSystem(procs)）────────────────
+    const pa = model.procAgg;
+    setText(procCountMetric.value, pa ? formatNumber(pa.count) : '—');
+    setText(procCpuMetric.value, pa ? `${pa.cpuPct.toFixed(1)}%` : '—');
+    setText(procMemMetric.value, pa ? fmtPct(pa.memPct) : '—');
+    setText(procThreadsMetric.value, pa ? formatNumber(pa.threads) : '—');
   }
 
   return {

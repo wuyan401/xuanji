@@ -235,7 +235,9 @@ if (scenario('view')) {
   await page.waitForTimeout(400);
   const modeAfter = (await dbg(page))?.mode;
   if (modeAfter !== modeBefore) fail('view.digitsBlocked', `mode ${modeBefore} → ${modeAfter}`);
-  // 回观星
+  // 回观星（v2.5 起 0 键按 agents→system→processes→agents 循环，需按两次）
+  await page.keyboard.press('0');
+  await page.waitForTimeout(1000);
   await page.keyboard.press('0');
   await page.waitForTimeout(1200);
   const back = await appState(page);

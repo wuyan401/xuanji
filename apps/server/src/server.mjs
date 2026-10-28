@@ -265,13 +265,13 @@ class FleetHub {
     return [];
   }
 
-  /** SSE `event: system` — compact frame, process list trimmed to the top 12. */
+  /** SSE `event: system` — 百工视图需要完整进程表（最多 220 条），不再截到 12。 */
   broadcastSystem(sample) {
     if (!sample || !this.clients.size) return;
     const frame = `event: system\ndata: ${JSON.stringify({
       type: 'system',
       ...sample,
-      procs: Array.isArray(sample.procs) ? sample.procs.slice(0, 12) : [],
+      procs: Array.isArray(sample.procs) ? sample.procs.slice(0, 220) : [],
     })}\n\n`;
     for (const client of this.clients) {
       if (!client.closed) this.writeClient(client, frame);

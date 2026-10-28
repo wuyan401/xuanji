@@ -169,7 +169,9 @@ while ($true) {
     $prevNet = @($rxTotal, $txTotal)
     $prevNetAt = $nowMs
 
-    # --- processes (top 12 by CPU, then memory) ----------------------------
+    # --- processes (v2.5 百工：全进程；采样器最多输出 $procLimit 条) ---------
+    $procLimit = 200
+    if ($env:PROC_LIMIT) { try { $procLimit = [Math]::Max(16, [int]$env:PROC_LIMIT) } catch { } }
     $procs = @()
     $nextPrev = @{}
     $procAt = $nowMs
@@ -184,21 +186,24 @@ while ($true) {
                 if ($cpuDeltaMs -lt 0) { $cpuDeltaMs = 0 }
             }
             $cpuPct = [Math]::Round(($cpuDeltaMs / $elapsedCpuMs) * 100.0 / $coreCount, 1)
+            $threadCount = 0
+            try { $threadCount = $process.Threads.Count } catch { }
             $nextPrev[$process.Id] = $process.TotalProcessorTime.TotalMilliseconds
             $procs += @{
                 pid = $process.Id
                 name = $process.ProcessName
                 cpuPct = $cpuPct
                 memBytes = [long]$process.WorkingSet64
+                threads = $threadCount
                 _cpu = $cpuDeltaMs
             }
         }
     } catch { }
     $prevProc = $nextPrev
     $prevProcAt = $procAt
-    $procs = @($procs | Sort-Object -Property @{ Expression = { $_.cpuPct }; Descending = $true }, @{ Expression = { $_.memBytes }; Descending = $true } | Select-Object -First 12)
+    $procs = @($procs | Sort-Object -Property @{ Expression = { $_.cpuPct }; Descending = $true }, @{ Expression = { $_.memBytes }; Descending = $true } | Select-Object -First $procLimit)
     $procs = @($procs | ForEach-Object {
-        @{ pid = $_.pid; name = $_.name; cpuPct = $_.cpuPct; memBytes = $_.memBytes }
+        @{ pid = $_.pid; name = $_.name; cpuPct = $_.cpuPct; memBytes = $_.memBytes; threads = $_.threads }
     })
 
     # --- battery (cheap enough every 8th sample) ---------------------------

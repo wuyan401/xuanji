@@ -263,7 +263,7 @@ test('GET /api/system and /api/system/history expose machine telemetry', async (
   assert.ok(Array.isArray(system.cpu.perCore));
   assert.ok(system.mem.usedPct >= 0 && system.mem.usedPct <= 1);
   assert.ok(Array.isArray(system.disks) && Array.isArray(system.procs));
-  assert.ok(system.procs.length <= 12, 'system.procs must be trimmed to 12');
+  assert.ok(system.procs.length <= 220, 'system.procs must be capped at 220 (百工 needs the full list)');
   if (system.available) assert.ok(system.mem.totalBytes > 0, 'a live sample must report total memory');
 
   const hist = await getJson('/api/system/history?limit=999');
@@ -314,7 +314,7 @@ test('GET /api/stream delivers fleet/tick/system frames', async (t) => {
   const data = JSON.parse(systemFrame.split('\ndata: ')[1]);
   assert.equal(data.type, 'system');
   assert.equal(typeof data.at, 'number');
-  assert.ok(Array.isArray(data.procs) && data.procs.length <= 12);
+  assert.ok(Array.isArray(data.procs) && data.procs.length <= 220);
   assert.ok(data.cpu && typeof data.cpu.usage === 'number');
 });
 

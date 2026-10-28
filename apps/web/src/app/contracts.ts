@@ -74,6 +74,29 @@ export interface StreamsDebug {
   sceneMs: number;
 }
 
+/**
+ * v2.5 百工视图验收：全进程机械盘面。
+ * 「百工」= 本机所有进程的机械化可视化：钢灰芯片、直线数据总线、严格 1Hz 机械节拍。
+ */
+export interface ProcessesDebug {
+  /** 当前绘制的进程芯片数（应与 procs 数量一致，上限见 §24） */
+  chips: number;
+  /** 轨道层数（CPU 轨 / 内存轨 / 沉积轨） */
+  rails: number;
+  /** 径向数据总线（直线流）条数 */
+  flowLines: number;
+  /** 机械节拍相位 0..1（严格 1Hz；用于断言「节拍匀速、不抖动」） */
+  tickPhase: number;
+  /** 总线环恒定角速 rad/s（应恒定不变） */
+  scrollRate: number;
+  /** 当前绘制层（保证只有 processes 视图才输出芯片） */
+  mode: ViewKind;
+  /** 选中进程 pid（无选中 null） */
+  selectedPid: number | null;
+  /** 最近一帧 scene 耗时 ms */
+  sceneMs: number;
+}
+
 export interface FrameStats {
   fps: number;
   /** 最近一段时间平均帧耗时 ms */
@@ -85,6 +108,8 @@ export interface FrameStats {
 export interface SceneCallbacks {
   /** 点击星体（空白处 null） */
   onPick(sessionId: string | null): void;
+  /** v2.5 百工视图：点击进程芯片（空白处 null） */
+  onPickProcess?(pid: number | null): void;
   /** 运镜模式变化（自动导演也会触发） */
   onModeChange(mode: ViewMode): void;
   /** 统计信息（建议每 ~500ms 一次） */
@@ -158,6 +183,10 @@ export interface SceneHandle {
   debugHierarchy?(): HierarchyStats;
   /** v2.4 验收：星→中枢工作光流（连接/持续/断开）与主题旋转/配色 */
   debugStreams?(): StreamsDebug;
+  /** v2.5 验收：百工（全进程）视图的机械盘面统计 */
+  debugProcesses?(): ProcessesDebug;
+  /** v2.5：选中某个进程（pid）——点击芯片/工籍行时调用；null 清选 */
+  selectProcess?(pid: number | null): void;
   /** v2.3 主题切换（canvas 侧 palette 已由 applyTheme 改写，调用方负责落 data-theme 与持久化） */
   setTheme?(theme: ThemeId): void;
   setParams(params: VisualParams): void;
@@ -183,6 +212,8 @@ export interface HudCallbacks {
   onSourceFilter?(sourceId: string | null): void;
   /** 请求切换主题（HUD 主题铭牌/快捷键 T）。可选能力。 */
   onThemeRequest?(theme: ThemeId): void;
+  /** v2.5 百工视图：在《工籍》里点选进程（null = 清选）。可选能力。 */
+  onSelectProcess?(pid: number | null): void;
   onModeRequest(mode: ViewMode): void;
   onParamsChange(params: VisualParams): void;
   onPauseAutoChange(paused: boolean): void;
@@ -202,6 +233,8 @@ export interface HudHandle {
   setSourceFilter?(sourceId: string | null): void;
   /** 主题回执（HUD 同步铭牌文案与 aria）。可选能力。 */
   setTheme?(theme: ThemeId): void;
+  /** v2.5 百工视图：进程选中态回执（页面与场景共用）。可选能力。 */
+  setProcessSelection?(pid: number | null): void;
   setParams(params: VisualParams, opts?: { silent?: boolean }): void;
   setConnection(state: ConnectionState): void;
   setAutoPaused(paused: boolean): void;

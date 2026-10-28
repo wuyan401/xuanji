@@ -100,6 +100,11 @@ export class CameraSystem {
   /** v2.0 整机视图：锁定中心取景（不随机位档位平移/旋转，暂停自动导播） */
   staticFrame = false;
   params: VisualParams;
+  /** v2.5 §24.8：本视图的滚轮缩放范围（观星/整机 0.75–6.0；百工 0.8–4.0） */
+  zoomMin = ZOOM_MIN;
+  zoomMax = ZOOM_MAX;
+  /** v2.5 §24.8：本视图的拖拽硬限（R 的倍数；null = 沿用观星锚点补偿余量 R*3.2） */
+  dragHardR: number | null = null;
 
   private from: CamState = { ...this.cam };
   private target: CamState = { ...this.cam };
@@ -156,6 +161,25 @@ export class CameraSystem {
 
   setParams(p: VisualParams): void {
     this.params = p;
+  }
+
+  /**
+   * v2.5 §24.8：每种视图自己的取景边界。
+   * - 观星 / 整机：滚轮 0.75–6.0、拖拽沿用 R*1.2 舒适区（锚点补偿留 R*3.2 余量）；
+   * - 百工：滚轮 0.8–4.0、拖拽硬限 ±0.8R（机械盘面不允许把仪器拖出视野）。
+   * 切视图时立刻把越界状态收回，避免上一视图的缩放/位移带到下一视图。
+   */
+  setViewLimits(zoomMin: number, zoomMax: number, dragHardR: number | null): void {
+    this.zoomMin = Math.max(0.2, Math.min(zoomMin, zoomMax));
+    this.zoomMax = Math.max(this.zoomMin + 0.01, zoomMax);
+    this.dragHardR = dragHardR;
+    this.zoomGoal = clamp(this.zoomGoal, this.zoomMin, this.zoomMax);
+    this.zoomUser = clamp(this.zoomUser, this.zoomMin, this.zoomMax);
+    if (dragHardR !== null && this.env) {
+      const lim = this.env.R * dragHardR;
+      this.dragX = clamp(this.dragX, -lim, lim);
+      this.dragY = clamp(this.dragY, -lim, lim);
+    }
   }
 
   setReducedMotion(reduced: boolean): void {
@@ -374,12 +398,11 @@ export class CameraSystem {
 
   dragBy(dx: number, dy: number, env: Env): void {
     this.dragging = true;
-    const lim = env.R * 3.2;
-    const soft = env.R * DRAG_LIMIT_R;
-    // 拖拽本身只允许 ±1.2R 的舒适区，但滚轮锚点需要更大的补偿余量（不在这里收）
+    const lim = env.R * (this.dragHardR ?? 3.2);
+    // 拖拽本身只允许 ±1.2R 的舒适区（百工视图硬限 ±0.8R），但滚轮锚点需要更大的补偿余量
     this.dragX = clamp(this.dragX + dx, -lim, lim);
     this.dragY = clamp(this.dragY + dy, -lim, lim);
-    void soft;
+    void DRAG_LIMIT_R;
   }
 
   endDrag(): void {
@@ -406,14 +429,14 @@ export class CameraSystem {
 
     // —— v2.2 丝滑缩放：每帧只消费一次累计滚轮 delta（乘性、clamp），zoomUser 阻尼追它
     if (this.pendingWheel !== 0) {
-      this.zoomGoal = clamp(this.zoomGoal * Math.exp(-this.pendingWheel * 0.0011), ZOOM_MIN, ZOOM_MAX);
+      this.zoomGoal = clamp(this.zoomGoal * Math.exp(-this.pendingWheel * 0.0011), this.zoomMin, this.zoomMax);
       this.pendingWheel = 0;
     }
     const prevUser = this.zoomUser;
     this.zoomUser = damp(this.zoomUser, this.zoomGoal, 16, dt);
     // 帧间限速（§21.1 每帧 zoom 比值 ≤1.10）：防止事件累积造成单帧跳变
     const step = clamp(this.zoomUser / Math.max(1e-6, prevUser), 1 / 1.09, 1.09);
-    this.zoomUser = clamp(prevUser * step, ZOOM_MIN, ZOOM_MAX);
+    this.zoomUser = clamp(prevUser * step, this.zoomMin, this.zoomMax);
     // 双击复位：pan 也平滑归零（禁止瞬跳）
     if (this.resetPan) {
       this.dragX = damp(this.dragX, 0, 9, dt);
@@ -491,7 +514,7 @@ export class CameraSystem {
       const errX = cur.x - this.anchor.sx;
       const errY = cur.y - this.anchor.sy;
       if (Math.abs(errX) > 0.5 || Math.abs(errY) > 0.5) {
-        const lim = env.R * 3.2;
+        const lim = env.R * (this.dragHardR !== null ? this.dragHardR + 1.4 : 3.2);
         this.dragX = clamp(this.dragX - errX, -lim, lim);
         this.dragY = clamp(this.dragY - errY, -lim, lim);
       }

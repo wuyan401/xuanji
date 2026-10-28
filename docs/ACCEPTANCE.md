@@ -1,4 +1,4 @@
-﻿# 璇玑 · 验收手册（v2.4.3）
+# 璇玑 · 验收手册（v2.5）
 
 > 给「亲自验收」用的一页纸。全部步骤都在本机 `http://127.0.0.1:8787/` 上完成，不需要联网。
 > 建议先按 1–4 节目视走一遍（约 10 分钟），再跑 5 节的自动化命令对账。
@@ -10,7 +10,7 @@
 node -e "fetch('http://127.0.0.1:8787/api/health').then(r=>r.json()).then(h=>console.log(h.ok,h.source,h.sessions))"
 ```
 
-浏览器打开 <http://127.0.0.1:8787/>，**Ctrl+F5 强刷**（v2.4.3 换了前端产物）。
+浏览器打开 <http://127.0.0.1:8787/>，**Ctrl+F5 强刷**（v2.5 换了前端产物）。
 预期顶栏：`璇玑 · 授时` / 时辰 + 走秒 / `行 n 驻 m 藏 N` / 文速 / 览·书·作·讯·遣 / 主题铭牌「璇玑｜深空」/ 连接徽标「实况」。
 
 可选参数（URL 直接拼）：
@@ -40,6 +40,19 @@ node -e "fetch('http://127.0.0.1:8787/api/health').then(r=>r.json()).then(h=>con
 | ④ 深空配色 + 随势转速 | 按 **`T`** 切「深空」（或 `?theme=scifi`），等 live 活跃时对比静默时 | 光流/连接/工具光束全部转冷色（青蓝/荧光青绿，画面几乎无暖色）；外圈旋转在活跃时明显加快（约 1.1× 起）并在静默后回落；切回璇玑恢复原速原色 |
 
 > 想同时看「连接 / 流动 / 断开」三段：`?demo=1` 下 8 个假 agent 的状态会来回翻，比真实数据好等。
+
+## 2.5 v2.5 第三视图《百工 · 器群》（当前版本重点）
+
+| 检查 | 操作 | 预期 |
+|---|---|---|
+| 视图循环 | 连按 `0`：智能体 → 整机 → 百工 → 智能体 | 顶栏铭牌出现三枚「智能体 / 整机 / 百工」，第三枚选中时 canvas 换成机械盘面 |
+| 全进程可数 | 停在百工视图 | 顶栏「进程 200 / CPU x% / 内存 y% / 线程 5,xxx」；《工籍》名册严格按 CPU 降序；盘面上芯片数=进程数（最多 220） |
+| 三档轨道 | 看盘面 | 内圈 CPU 轨 / 中圈内存轨 / 外圈沉积轨；高 CPU 芯片是冷白实心条，沉积轨是一片暗骨白点环 |
+| 数据总线 | 看芯片到中心 | 每条芯片有一条径向虚线（`lineDashOffset` marching）汇向机轴；沉积轨缓慢流动、不静止 |
+| 机械节拍 | 盯 4 秒 | 机轴每秒瞬转 6°、总线环孔位逐一点亮、屏幕自上而下 2 条扫描线；没有任何缓动/回弹 |
+| 选中进程 | 点《工籍》任一行或盘面芯片 | 芯片出现 2px 外描边 + 选中环 + 四角刻；《器牒》切到档案（PID/名称/CPU/内存/线程/所属轨 +「← 进程总览」）；`Esc` 清选 |
+| 深空主题 | 按 `T` | 器群换成青蓝/荧光青绿；工籍/器牒刻度列出现；再按 `T` 回到璇玑 |
+| 与智能体视图的区别 | 来回按 `0` | 智能体：曲线/节拍/暖金/呼吸/留痕；百工：直线/等速/钢灰冷白/严格 1Hz/无痕——气质刻意对立 |
 
 ## 3. v2.3 八项（回归检查，仍应成立）
 
@@ -80,19 +93,20 @@ node -e "fetch('http://127.0.0.1:8787/api/health').then(r=>r.json()).then(h=>con
 cd astra
 pnpm -C apps/web exec tsc --noEmit       # 类型 0 错误
 pnpm -C apps/web build                   # 构建 EXIT 0（JS 222.4KB / gzip 75.0；CSS 77.7KB / gzip 14.4）
-pnpm test                                # 后端 16 pass / 0 fail
-pnpm verify:data                         # 数据对账 14223 项 PASS / FAIL 0
+pnpm test                                # 后端 15 pass / 0 fail
+pnpm verify:data                         # 数据对账约 1.4 万项 PASS / FAIL 0
 pnpm verify:ui                           # 浏览器：live/behavior/demo/motion/perf，console 0 错
+node tools/qa-v25.mjs                    # 14/14：百工视图/三轨/数据总线/选中/主题/性能
 node tools/qa-v24.mjs                    # 16/16：工作光流连接/持续/改锚/断开 + 深空配色/外圈随势
 node tools/qa-v23.mjs                    # 23/23：稳定/亮度/层级/数据流/协作/出生/核心 6 层/双主题
 node tools/qa-v21.mjs                    # 24/24：默认不动/锁定不回拉/光标锚点/深看/字号随缩放变大/记忆
 node tools/qa-v22.mjs                    # 18/18：丝滑缩放/三层异速/不重合/记忆
 node tools/qa-v12.mjs                    # 12/12：星数/缩放/分野总览/键盘/三视口
 node tools/qa-v2.mjs                     # 11/11：诸源签/来源筛选/视图切换/整机面板
-node tools/shots.mjs                     # 重生成 docs/screenshots/ 的 01–17 应用截图
+node tools/shots.mjs                     # 重生成 docs/screenshots/ 的 01–17 应用截图与 32–35 百工截图
 ```
 
-报告落在 `docs/qa/<套件>-<时间戳>/report.json`；截图产物在 `docs/screenshots/`（30 张）。
+报告落在 `docs/qa/<套件>-<时间戳>/report.json`；截图产物在 `docs/screenshots/`（35 张）。
 
 > **口径提醒（如实）**：`qa-v12 / v2 / v21 / v22 / v23 / v24 / qa-check` 里有少数「页面级帧时 / 亮度采样」指标，在本机 headless（软件光栅化 + 390 会话 SSE/HUD 主线程）对机器负载很敏感：
 > 单套顺序跑全绿；同时开几个 headless 套件时会偶发超阈值。硬性能预算以场景自报帧时为准（`scene` 6.13ms/帧，预算 ≤7ms），不是页面级 rAF 秒表。
@@ -107,16 +121,17 @@ node tools/shots.mjs                     # 重生成 docs/screenshots/ 的 01–
 - 主题切换时 canvas 400ms 与 HUD 320ms 有约 80ms 刻意错位（避免整屏同时变色太硬）；深空下工具光束色相 161°（落在设计区间 160–220°）。
 - Codex 本机只有配置没有 rollout：界面如实显示「未发现」，不生成假会话。
 - 整机遥测仅 Windows（PowerShell 采样）；非 Windows 显示「遥测不可用」而不是发 0。
+- 《百工》最多画 220 个进程（后端 `PROC_LIMIT` 可调），超出按 CPU 降序截断；该视图没有自动运镜（与另两视图刻意区分），只有滚轮 0.8–4.0× 与拖拽 ±0.8R。
 
 ## 7. 交付物索引
 
 | 文件 | 内容 |
 |---|---|
-| `README.md` | 产品说明 + 全部变更记录（v1.0 → v2.4.3） |
-| `docs/DESIGN-BIBLE.md` | 视觉圣经 v2.4.3（§23 光流/主题 · §20.2 字号） |
-| `docs/ARCHITECTURE.md` | 工程契约（含整机/多源架构） |
+| `README.md` | 产品说明 + 全部变更记录（v1.0 → v2.5） |
+| `docs/DESIGN-BIBLE.md` | 视觉圣经 v2.5（§24 百工 · §23 光流/主题 · §20.2 字号） |
+| `docs/ARCHITECTURE.md` | 工程契约（含整机/多源/百工架构） |
 | `docs/DATA-CONTRACT.md` | 数据契约 v2 |
-| `docs/screenshots/` | 30 张交付截图 + 清单 |
+| `docs/screenshots/` | 35 张交付截图 + 清单 |
 | `docs/qa/` | 各套件最新验收报告 + 子 agent 自审记录 |
 | `docs/research/01–06` | 五个参考系 + haloflux 的完整研究（机制 vs 皮） |
 | `apps/server/README.md` | 后端 API / 数据源 / 性能与限制 |

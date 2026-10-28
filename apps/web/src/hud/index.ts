@@ -27,6 +27,8 @@ import { createDossier } from './dossier';
 import { createHelp } from './help';
 import { createLedger } from './ledger';
 import { createProcPanel } from './proc-panel';
+import { createProcessDetail } from './process-detail';
+import { createProcessList } from './process-list';
 import { createSystemPanel } from './system-panel';
 import { createToasts } from './toast';
 import { createTopbar } from './topbar';
@@ -40,14 +42,17 @@ import '../styles/help.css';
 import '../styles/boot.css';
 import '../styles/view2.css';
 import '../styles/theme.css';
+import '../styles/process.css';
 
 const MODE_CN = ['壹', '贰', '叁', '肆', '伍', '陆', '柒'];
 const HINT_MOBILE = 'Space 自动运镜 · 滚轮缩放 · 双击复位';
+const HINT_PROCESS_SHORT = '0 切视图 · ↑↓ 择进程 · Esc 清选';
 const COLLECTOR = '127.0.0.1:8787';
 
-/** v2.1 视野主权（BIBLE §20.4）：提示行实时反映自动运镜开关。 */
+/** v2.1 视野主权（BIBLE §20.4）：提示行实时反映自动运镜开关。v2.5 百工视图换进程键位。 */
 function hintKeysFor(view: ViewKind, paused: boolean): string {
   const auto = `Space 自动运镜（${paused ? '关' : '开'}）`;
+  if (view === 'processes') return '0 切视图　↑↓ 择进程　Esc 清选　滚轮 缩放　? 快捷键';
   return view === 'system'
     ? `0 观星　${auto}　滚轮 对准缩放 · 双击 复位　? 快捷键`
     : `↑↓ 择星　Enter 勘验　L 起居注　/ 调参　${auto}　滚轮 对准缩放 · 双击 复位　? 快捷键`;
@@ -96,6 +101,8 @@ export function createHud(
   // v2.3 双主题：main 负责 applyTheme/saveTheme，HUD 只回执铭牌与做 320ms 交叉淡入
   let theme: ThemeId = opts.theme ?? 'xuanji';
   let themeFadeTimer = 0;
+  // v2.5 百工视图：进程选中态（由 main 的 selectProcess 回执；HUD 只在本地高亮）
+  let processSelection: number | null = null;
   const tokenSamples: number[] = [];
 
   // ── 图层：顶栏（v2.0 含「智能体 ｜ 整机」视图铭牌，v2.3 含「璇玑 / 深空」主题铭牌）──
@@ -171,6 +178,18 @@ export function createHud(
     },
   });
 
+  // ── 图层：《工籍》《器牒》（v2.5 百工视图，替代起居注 / 星牒）──────
+  const processList = createProcessList(container, {
+    onSelectProcess: (pid) => cb.onSelectProcess?.(pid),
+  });
+  const processDetail = createProcessDetail(container, {
+    onSelectProcess: (pid) => cb.onSelectProcess?.(pid),
+    onRequestClose: () => {
+      processDetail.close();
+      refreshPanelState();
+    },
+  });
+
   // ── 图层：调参台 ────────────────────────────────────────────
   const consolePanel = createConsole(container, params, {
     onParamsChange: (next) => {
@@ -230,6 +249,24 @@ export function createHud(
   }
 
   // ── 顶栏刷新 ────────────────────────────────────────────────
+  /**
+   * v2.5 百工：顶栏读机器级负载（与整机视图同语义）+ 进程级计数。
+   * O(n) 只在每次 setSystem（2s 一帧）算一次，不逐帧。
+   */
+  function computeProcAgg(): { count: number; cpuPct: number; memPct: number; threads: number } | null {
+    if (!system || !system.available || system.procs.length === 0) return null;
+    let threads = 0;
+    for (const proc of system.procs) {
+      threads += typeof proc.threads === 'number' ? proc.threads : 0;
+    }
+    return {
+      count: system.procs.length,
+      cpuPct: system.cpu.usage * 100,
+      memPct: system.mem.usedPct,
+      threads,
+    };
+  }
+
   function refreshTopbar(): void {
     topbar.update({
       aggregates: fleet?.aggregates ?? null,
@@ -244,6 +281,7 @@ export function createHud(
       system,
       systemAgeMs: systemAt > 0 ? Date.now() - systemAt : 0,
       theme,
+      procAgg: computeProcAgg(),
     });
   }
 
@@ -261,22 +299,38 @@ export function createHud(
     if (next === 'agents') {
       procPanel.close();
       systemPanel.setSource(source);
-    } else {
+      processList.setSource(source);
+      processDetail.setSource(source);
+    } else if (next === 'system') {
       procPanel.setSource(source);
       systemPanel.setSource(source);
+      processList.setSource(source);
+      processDetail.setSource(source);
       // 整机视图右侧就是《器录》：桌面自动展开（窄屏保留竖签，点开为 sheet）
       if (window.matchMedia('(min-width: 1280px)').matches) procPanel.open();
+    } else {
+      // v2.5 百工：名册与档案一起换到进程盘面（深度由 scene 绘制，HUD 只读 system.procs）
+      processList.setSource(source);
+      processDetail.setSource(source);
+      processList.setSystem(system);
+      processDetail.setSystem(system);
+      processDetail.setSelection(processSelection);
     }
     refreshTopbar();
     refreshHint();
     refreshPanelState();
     refreshDemo();
     updateCenter();
-    announce(
-      next === 'agents'
-        ? `智能体视图 · ${VIEW_KIND_LABEL.agents}`
-        : `整机视图 · CPU ${system ? Math.round(system.cpu.usage * 100) : 0}% 内存 ${system ? Math.round(system.mem.usedPct * 100) : 0}%`,
-    );
+    if (next === 'agents') {
+      announce(`智能体视图 · ${VIEW_KIND_LABEL.agents}`);
+    } else if (next === 'system') {
+      announce(
+        `整机视图 · CPU ${system ? Math.round(system.cpu.usage * 100) : 0}% 内存 ${system ? Math.round(system.mem.usedPct * 100) : 0}%`,
+      );
+    } else {
+      const agg = computeProcAgg();
+      announce(agg ? `百工视图 · ${agg.count} 进程 · CPU ${Math.round(agg.cpuPct)}%` : '百工视图 · 进程遥测不可用');
+    }
   }
 
   function setView(next: ViewKind): void {
@@ -289,6 +343,10 @@ export function createHud(
     systemAt = next ? Date.now() : 0;
     systemPanel.setSystem(next);
     procPanel.setSystem(next);
+    // v2.5 百工：《工籍》《器牒》只读 system.procs（2s 一帧，O(n) 聚合一次）
+    processList.setSystem(next);
+    processDetail.setSystem(next);
+    processDetail.setSelection(processSelection);
     refreshTopbar();
     updateCenter();
     if (view === 'system') {
@@ -297,7 +355,30 @@ export function createHud(
           ? `整机视图 · CPU ${Math.round(next.cpu.usage * 100)}% 内存 ${Math.round(next.mem.usedPct * 100)}%`
           : '整机视图 · 遥测不可用',
       );
+    } else if (view === 'processes') {
+      const agg = computeProcAgg();
+      announce(agg ? `百工视图 · ${agg.count} 进程 · CPU ${Math.round(agg.cpuPct)}%` : '百工视图 · 进程遥测不可用');
     }
+  }
+
+  // ── v2.5 进程选中回执（main ⇄ scene ⇄ HUD 双向同步）────────────
+  function setProcessSelection(pid: number | null): void {
+    const changed = processSelection !== pid;
+    processSelection = pid;
+    processList.setSelection(pid);
+    processDetail.setSelection(pid);
+    if (pid != null && view === 'processes' && window.matchMedia('(max-width: 720px)').matches) {
+      processDetail.open();
+    }
+    if (changed && view === 'processes') {
+      if (pid == null) {
+        announce('进程已清选');
+      } else {
+        const proc = system?.procs.find((item) => item.pid === pid);
+        announce(proc ? `${proc.name} · CPU ${proc.cpuPct.toFixed(1)}%` : '进程已选中');
+      }
+    }
+    refreshPanelState();
   }
 
   function setSourceFilter(sourceId: string | null): void {
@@ -334,8 +415,8 @@ export function createHud(
       setText(centerSub, `检查采集器 (${COLLECTOR})`);
       return;
     }
-    if (view === 'system') {
-      // 整机视图无「空会话」概念：不显示观星空态铭文
+    if (view === 'system' || view === 'processes') {
+      // 整机/百工视图无「空会话」概念：不显示观星空态铭文
       centerNote.hidden = true;
       return;
     }
@@ -354,10 +435,15 @@ export function createHud(
     const keys = hintKeysFor(view, autoPaused);
     hint.dataset.auto = autoPaused ? 'off' : 'on';
     setText(hintKeys, keys);
-    setText(hintKeysShort, HINT_MOBILE);
+    setText(hintKeysShort, view === 'processes' ? HINT_PROCESS_SHORT : HINT_MOBILE);
     if (view === 'system') {
       setText(hintNum, '整机');
       setText(hintName, '仪象');
+      return;
+    }
+    if (view === 'processes') {
+      setText(hintNum, '百工');
+      setText(hintName, '器群');
       return;
     }
     const index = Math.max(0, VIEW_MODE_ORDER.indexOf(mode));
@@ -366,7 +452,14 @@ export function createHud(
   }
 
   function refreshPanelState(): void {
-    const panelOpen = dossier.isOpen() || consolePanel.isOpen() || help.isOpen() || procPanel.isOpen();
+    // 整机/百工的左右面板在桌面上是常设仪表，不参与「让位」判断；
+    // 观星视图才按星牒/调参台/帮助是否打开来让出中央提示。
+    const panelOpen =
+      view === 'agents'
+        ? dossier.isOpen() || consolePanel.isOpen() || help.isOpen()
+        : view === 'system'
+          ? consolePanel.isOpen() || help.isOpen()
+          : consolePanel.isOpen() || help.isOpen() || processDetail.isOpen();
     container.classList.toggle('is-panel-open', panelOpen);
   }
 
@@ -575,12 +668,13 @@ export function createHud(
       return consumed;
     }
     if (e.key === 'Escape') {
-      if (procPanel.isOpen()) {
+      // 只有当前视图自己的浮层才消费 Esc；百工视图把 Esc 留给 main 清进程选中
+      if (view === 'system' && procPanel.isOpen()) {
         procPanel.close();
         refreshPanelState();
         return true;
       }
-      if (dossier.isOpen()) {
+      if (view === 'agents' && dossier.isOpen()) {
         dossier.close();
         dossier.setSectorFocus(null);
         refreshPanelState();
@@ -591,6 +685,23 @@ export function createHud(
       return false;
     }
     if (isEditableTarget(e.target)) return false;
+
+    // v2.5 百工视图：↑↓/Home/End 在《工籍》里移选（选中回执由 main → HUD 双向同步）
+    if (
+      view === 'processes' &&
+      (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End')
+    ) {
+      const pids = processList.getPids();
+      if (pids.length === 0) return false;
+      const at = processSelection == null ? -1 : pids.indexOf(processSelection);
+      let nextIndex = 0;
+      if (e.key === 'ArrowDown') nextIndex = at < 0 ? 0 : Math.min(pids.length - 1, at + 1);
+      else if (e.key === 'ArrowUp') nextIndex = at < 0 ? 0 : Math.max(0, at - 1);
+      else if (e.key === 'End') nextIndex = pids.length - 1;
+      e.preventDefault();
+      cb.onSelectProcess?.(pids[nextIndex]);
+      return true;
+    }
 
     switch (e.key) {
       case '?':
@@ -606,6 +717,11 @@ export function createHud(
         if (view === 'system') {
           // 整机视图：L 把焦点交给《机枢》面板
           systemPanel.root.querySelector<HTMLElement>('.sys-grip')?.focus();
+          return true;
+        }
+        if (view === 'processes') {
+          // 百工视图：L 把焦点交给《工籍》，便于键盘移选
+          processList.focusFirst();
           return true;
         }
         cb.onModeRequest('ledger');
@@ -625,6 +741,8 @@ export function createHud(
     consolePanel.dispose();
     procPanel.dispose();
     systemPanel.dispose();
+    processDetail.dispose();
+    processList.dispose();
     dossier.dispose();
     ledger.dispose();
     toasts.dispose();
@@ -653,5 +771,6 @@ export function createHud(
     setSystem,
     setSourceFilter,
     setTheme,
+    setProcessSelection,
   };
 }

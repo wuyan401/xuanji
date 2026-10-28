@@ -13,7 +13,8 @@ import { fileURLToPath } from 'node:url';
 import { EventEmitter } from 'node:events';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const PROCS_TOP = 12;
+/** v2.5 百工视图要「全进程」：采样器输出上限（按 CPU/内存取前 N） */
+const PROCS_TOP = 220;
 const RESTART_MAX_MS = 10_000;
 
 function num(value, fallback = 0) {
@@ -35,6 +36,7 @@ export function normalizeSample(raw, now = Date.now()) {
           name: String(proc?.name ?? '?').slice(0, 64),
           cpuPct: Math.round(num(proc?.cpuPct) * 10) / 10,
           memBytes: Math.round(num(proc?.memBytes)),
+          threads: Math.round(num(proc?.threads)),
         }))
         .slice(0, PROCS_TOP)
     : [];

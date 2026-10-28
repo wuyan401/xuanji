@@ -163,7 +163,7 @@ test('normalizeSample parses one sampler JSON line into the /api/system shape', 
   assert.equal(sample.mem.totalBytes, 4096);
   assert.equal(sample.disks[0].usedPct, 0.75);
   assert.equal(sample.net.rxBps, 11); // rounded bytes/s
-  assert.equal(sample.procs.length, 12); // top-12 only
+  assert.equal(sample.procs.length, 20); // up to 220 kept for the 百工 view
   assert.equal(sample.uptimeSec, 124);
   assert.deepEqual(sample.battery, { percent: 100, charging: true });
   assert.equal(normalizeSample(null), null);

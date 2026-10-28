@@ -4,8 +4,8 @@
 export type AgentState = 'live' | 'idle' | 'ended';
 export type ToolCategory = 'read' | 'write' | 'exec' | 'net' | 'agent';
 export type ViewMode = 'survey' | 'track' | 'dossier' | 'ledger' | 'orrery' | 'scan' | 'vigil';
-/** 顶层视图：智能体观测 / 整机仪象 */
-export type ViewKind = 'agents' | 'system';
+/** 顶层视图：智能体观测 / 整机仪象 / 百工器群（全进程） */
+export type ViewKind = 'agents' | 'system' | 'processes';
 export type SourceKind = 'live' | 'demo' | 'replay';
 export type ConnectionState = 'connecting' | 'live' | 'reconnecting' | 'offline';
 
@@ -212,6 +212,8 @@ export interface ProcInfo {
   /** 0..100（相对单核） */
   cpuPct: number;
   memBytes: number;
+  /** 线程数（可选；Windows 采样器提供，历史样本可能缺失） */
+  threads?: number;
 }
 
 export interface BatteryInfo {
@@ -307,7 +309,11 @@ export const VIEW_MODE_ORDER: ViewMode[] = [
 export const VIEW_KIND_LABEL: Record<ViewKind, string> = {
   agents: '智能体',
   system: '整机',
+  processes: '百工',
 };
+
+/** 视图轮换顺序（0 键 / 顶栏铭牌） */
+export const VIEW_KIND_ORDER: readonly ViewKind[] = ['agents', 'system', 'processes'];
 
 /** 来源短名（分野标签、星环、图例用） */
 export const SOURCE_SHORT: Record<SourceId, string> = {

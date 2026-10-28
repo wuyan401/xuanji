@@ -1,0 +1,803 @@
+/* ============================================================================
+   璇玑 XUANJI · HUD v2.5 · 百工视图（BIBLE §24.6）
+   《工籍》= 全机进程名册（严格 CPU 降序，24 行/屏，24px 行高）
+   《器牒》= 进程总览 / 单进程档案（右侧常开；移动端 bottom sheet）
+   气质：庞大静止数据流 · 无感情波动 · 极致理性的机械运作。
+   主干只用钢灰 / 冷白 / 骨白；暖金只出现在既有全局钩子里，不进入本视图主干。
+   ========================================================================== */
+
+/* ① 视图互斥：processes 只露《工籍》《器牒》，其余视图彻底隐藏 ---------- */
+.xj-hud[data-view='processes'] .led,
+.xj-hud[data-view='processes'] .ds-wrap,
+.xj-hud[data-view='processes'] .sys-panel,
+.xj-hud[data-view='processes'] .pr-wrap {
+  display: none;
+}
+
+.xj-hud[data-view='agents'] .pg-panel,
+.xj-hud[data-view='agents'] .pd-wrap,
+.xj-hud[data-view='system'] .pg-panel,
+.xj-hud[data-view='system'] .pd-wrap {
+  display: none;
+}
+
+/* ② 顶栏第三铭牌与整机/进程指标组 -------------------------------------- */
+.xj-hud[data-view='processes'] .tb-metrics--agents,
+.xj-hud[data-view='processes'] .tb-metrics--system {
+  display: none;
+}
+
+.xj-hud[data-view='processes'] .tb-uptime,
+.xj-hud[data-view='processes'] .tb-battery,
+.xj-hud[data-view='processes'] .tb-mode,
+.xj-hud[data-view='processes'] .tb-paused {
+  display: none;
+}
+
+.tb-metrics--processes {
+  display: none;
+}
+
+.xj-hud[data-view='processes'] .tb-metrics--processes {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.tb-metric--proc .tb-metric-value {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1360px) {
+  .xj-hud[data-view='processes'] .tb-metric--proc-threads {
+    display: none;
+  }
+}
+
+@media (max-width: 1180px) {
+  .xj-hud[data-view='processes'] .tb-metric--proc-mem {
+    display: none;
+  }
+}
+
+/* ③ 《工籍》：左下名册 -------------------------------------------------- */
+.pg-panel {
+  --pg-line: color-mix(in srgb, var(--cold-300) 22%, transparent);
+  --pg-line-strong: color-mix(in srgb, var(--cold-300) 42%, transparent);
+  --pg-paper: color-mix(in srgb, var(--ink-void) 92%, transparent);
+  --pg-paper-soft: color-mix(in srgb, var(--ink-void) 76%, transparent);
+  --pg-fg: var(--bone-200);
+  --pg-dim: var(--bone-400);
+  --pg-faint: var(--bone-500);
+  --pg-accent: var(--cold-300);
+  position: absolute;
+  left: clamp(18px, 2.4vw, 40px);
+  bottom: 24px;
+  z-index: var(--z-panel);
+  display: flex;
+  flex-direction: column;
+  width: clamp(360px, 38vw, 600px);
+  height: min(40vh, 400px);
+  pointer-events: auto;
+  background: linear-gradient(
+    to top,
+    var(--pg-paper) 0%,
+    var(--pg-paper-soft) 46%,
+    color-mix(in srgb, var(--ink-void) 40%, transparent) 78%,
+    transparent 100%
+  );
+  font-family: var(--font-body);
+}
+
+.pg-panel::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: var(--pg-line-strong);
+  pointer-events: none;
+}
+
+.pg-grip {
+  display: none;
+}
+
+.pg-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 10px 0 8px;
+  flex: 0 0 auto;
+}
+
+.pg-stamp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 29px;
+  border: 1px solid var(--pg-line-strong);
+  color: var(--pg-dim);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1.02;
+  letter-spacing: 0.08em;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  user-select: none;
+}
+
+.pg-head-text {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pg-title {
+  margin: 0;
+  color: var(--bone-100);
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.24em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.pg-sub {
+  color: var(--pg-faint);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pg-meta {
+  margin-left: auto;
+  color: var(--pg-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pg-table {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pg-head-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 58px 62px 34px;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--pg-line-strong);
+  flex: 0 0 auto;
+}
+
+.pg-th {
+  color: var(--pg-dim);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.pg-th.pg-cpu,
+.pg-th.pg-mem,
+.pg-th.pg-threads {
+  text-align: right;
+}
+
+.pg-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--cold-300) 24%, transparent) transparent;
+}
+
+.pg-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 58px 62px 34px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-bottom: 1px solid var(--pg-line);
+  background: transparent;
+  color: var(--pg-fg);
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  font-family: var(--font-body);
+  transition: background-color 140ms ease-out;
+}
+
+.pg-row:last-child {
+  border-bottom-color: transparent;
+}
+
+.pg-row:hover {
+  background: color-mix(in srgb, var(--cold-300) 7%, transparent);
+}
+
+.pg-row:focus-visible {
+  outline: 2px solid var(--bone-100);
+  outline-offset: -2px;
+}
+
+.pg-row[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--cold-300) 9%, transparent);
+}
+
+.pg-row[aria-pressed='true']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--bone-100);
+}
+
+.pg-cell {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pg-pid,
+.pg-cpu,
+.pg-mem,
+.pg-threads {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.pg-pid {
+  color: var(--pg-faint);
+  text-align: left;
+}
+
+.pg-name {
+  color: var(--pg-fg);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+}
+
+.pg-cpu,
+.pg-mem,
+.pg-threads {
+  text-align: right;
+  color: var(--pg-dim);
+}
+
+.pg-row[aria-pressed='true'] .pg-name {
+  color: var(--bone-100);
+}
+
+.pg-row[aria-pressed='true'] .pg-cpu {
+  color: var(--pg-accent);
+}
+
+.pg-empty {
+  margin: auto;
+  padding: 0 16px;
+  color: var(--pg-faint);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+/* ④ 《器牒》：右侧档案页（桌面常开；移动端 bottom sheet） --------------- */
+.pd-wrap {
+  --pd-line: color-mix(in srgb, var(--cold-300) 22%, transparent);
+  --pd-line-strong: color-mix(in srgb, var(--cold-300) 42%, transparent);
+  --pd-paper: color-mix(in srgb, var(--ink-void) 94%, transparent);
+  --pd-fg: var(--bone-200);
+  --pd-dim: var(--bone-400);
+  --pd-faint: var(--bone-500);
+  --pd-accent: var(--cold-300);
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 320px;
+  height: min(76vh, 680px);
+  pointer-events: none;
+  z-index: var(--z-panel);
+  font-family: var(--font-body);
+}
+
+.pd-tab {
+  display: none;
+}
+
+.pd-panel {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  border-left: 1px solid var(--pd-line-strong);
+  background: linear-gradient(
+    to left,
+    var(--pd-paper) 0%,
+    var(--pd-paper) 84%,
+    color-mix(in srgb, var(--ink-void) 78%, transparent) 100%
+  );
+}
+
+.pd-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  height: 56px;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--pd-line);
+}
+
+.pd-stamp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 29px;
+  border: 1px solid var(--pd-line-strong);
+  color: var(--pd-dim);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1.02;
+  letter-spacing: 0.08em;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  user-select: none;
+}
+
+.pd-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.pd-title {
+  margin: 0;
+  color: var(--bone-100);
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.24em;
+  line-height: 1;
+}
+
+.pd-sub {
+  color: var(--pd-faint);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pd-meta {
+  margin-left: auto;
+  color: var(--pd-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pd-panel .xj-close {
+  margin-left: 4px;
+}
+
+.pd-overview,
+.pd-detail {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 16px 18px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--cold-300) 24%, transparent) transparent;
+}
+
+.pd-sec-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 12px 0 7px;
+  border-bottom: 1px solid var(--pd-line);
+  margin-bottom: 2px;
+}
+
+.pd-sec-heading {
+  margin: 0;
+  color: var(--bone-100);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+}
+
+.pd-sec-note {
+  margin-left: auto;
+  color: var(--pd-faint);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+}
+
+.pd-table {
+  margin: 0;
+}
+
+.pd-row {
+  display: grid;
+  grid-template-columns: 5.4em minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 27px;
+  border-bottom: 1px solid var(--pd-line);
+}
+
+.pd-row:last-child {
+  border-bottom-color: transparent;
+}
+
+.pd-label {
+  margin: 0;
+  color: var(--pd-dim);
+  font-size: 11.5px;
+  letter-spacing: 0.03em;
+}
+
+.pd-value {
+  margin: 0;
+  color: var(--pd-fg);
+  font-size: 12.5px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pd-rails {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 6px;
+}
+
+.pd-rail {
+  display: grid;
+  grid-template-columns: 18px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  border-bottom: 1px solid var(--pd-line);
+}
+
+.pd-rail:last-child {
+  border-bottom-color: transparent;
+}
+
+.pd-rail-mark {
+  width: 7px;
+  height: 7px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+.pd-rail[data-rail='cpu'] .pd-rail-mark {
+  color: var(--cold-300);
+}
+
+.pd-rail[data-rail='mem'] .pd-rail-mark {
+  color: var(--bone-300);
+}
+
+.pd-rail[data-rail='dormant'] .pd-rail-mark {
+  color: var(--bone-500);
+}
+
+.pd-rail-label {
+  color: var(--pd-dim);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+}
+
+.pd-rail-count {
+  color: var(--bone-100);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.pd-rail-unit {
+  color: var(--pd-faint);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+}
+
+.pd-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--pd-faint);
+  font-family: var(--font-body);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.pd-back:hover {
+  color: var(--bone-100);
+}
+
+.pd-back:focus-visible {
+  outline: 2px solid var(--bone-100);
+  outline-offset: 3px;
+}
+
+.pd-back-arrow {
+  color: var(--pd-dim);
+}
+
+.pd-rail-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  color: var(--pd-fg);
+}
+
+.pd-rail-tag .pd-rail-mark {
+  width: 6px;
+  height: 6px;
+}
+
+.pd-rail-tag .pd-rail-label {
+  color: var(--pd-fg);
+  font-size: 12px;
+}
+
+.pd-empty {
+  margin: auto;
+  padding: 16px;
+  color: var(--pd-faint);
+  font-size: 12px;
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+
+/* ⑤ 响应式：≤900 收窄，≤720 工籍抽屉 + 器牒 bottom sheet ---------------- */
+@media (max-width: 900px) {
+  .pg-panel {
+    width: clamp(330px, 42vw, 480px);
+  }
+
+  .pd-wrap {
+    width: 300px;
+    height: min(70vh, 620px);
+  }
+}
+
+@media (max-width: 720px) {
+  /* 顶栏只留「进程 N · CPU x%」 */
+  .xj-hud[data-view='processes'] .tb-metric--proc-mem,
+  .xj-hud[data-view='processes'] .tb-metric--proc-threads {
+    display: none;
+  }
+
+  .xj-hud[data-view='processes'] .hint-keys--short {
+    font-size: 10.5px;
+  }
+
+  /* 《工籍》变底部抽屉：收起 74px 只看把手+头，上滑展开 62vh */
+  .pg-panel {
+    left: 0;
+    right: 0;
+    width: auto;
+    bottom: 0;
+    height: calc(112px + env(safe-area-inset-bottom));
+    border-left: 0;
+    background: var(--ink-deep);
+    transition: height 260ms var(--ease-out);
+  }
+
+  .pg-panel::before {
+    display: none;
+  }
+
+  .pg-grip {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    height: 16px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+
+  .pg-grip-line {
+    width: 34px;
+    height: 2px;
+    background: var(--pg-line-strong);
+  }
+
+  .pg-panel[data-expanded='true'] {
+    height: 62vh;
+  }
+
+  .pg-panel[data-expanded='true'] .pg-grip {
+    align-items: center;
+    height: 18px;
+  }
+
+  .pg-head {
+    height: 34px;
+    padding: 0 12px;
+  }
+
+  .pg-panel[data-expanded='false'] .pg-body {
+    max-height: 64px;
+    overflow: hidden;
+  }
+
+  .pg-row {
+    grid-template-columns: 44px minmax(0, 1fr) 52px 54px 28px;
+    height: 32px;
+    padding: 0 12px;
+    gap: 6px;
+  }
+
+  .pg-head-row {
+    grid-template-columns: 44px minmax(0, 1fr) 52px 54px 28px;
+    padding: 0 12px;
+    gap: 6px;
+  }
+
+  .pg-pid,
+  .pg-cpu,
+  .pg-mem,
+  .pg-threads {
+    font-size: 10.5px;
+  }
+
+  .pg-name {
+    font-size: 12px;
+  }
+
+  /* 《器牒》bottom sheet：未选进程时只留右侧竖签，选中后升起 */
+  .pd-wrap {
+    position: absolute;
+    top: auto;
+    bottom: 0;
+    right: 0;
+    left: 0;
+    transform: none;
+    width: auto;
+    height: auto;
+    pointer-events: none;
+  }
+
+  .pd-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: auto;
+    right: 0;
+    bottom: calc(150px + env(safe-area-inset-bottom));
+    width: 28px;
+    height: 88px;
+    padding: 0;
+    border: 1px solid var(--pd-line-strong);
+    border-right: 0;
+    background: var(--ink-void);
+    color: var(--pd-dim);
+    cursor: pointer;
+    pointer-events: auto;
+  }
+
+  .pd-tab-text {
+    width: 12px;
+    color: inherit;
+    font-family: var(--font-display);
+    font-size: 12.5px;
+    letter-spacing: 0.24em;
+    line-height: 1;
+    writing-mode: vertical-rl;
+    text-orientation: upright;
+  }
+
+  .pd-tab[hidden] {
+    display: none;
+  }
+
+  .pd-panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: auto;
+    max-height: 0;
+    overflow: hidden;
+    border-left: 0;
+    border-top: 1px solid var(--pd-line-strong);
+    background: var(--ink-void);
+    pointer-events: auto;
+    transition: max-height 300ms var(--ease-out);
+  }
+
+  .pd-panel[data-open='true'] {
+    max-height: 78vh;
+  }
+
+  .pd-head {
+    height: 54px;
+    padding: 0 8px 0 14px;
+  }
+
+  .pd-overview,
+  .pd-detail {
+    padding: 2px 14px calc(16px + env(safe-area-inset-bottom));
+  }
+
+  .pd-row {
+    min-height: 32px;
+  }
+}
+
+/* ⑥ reduced-motion：无位移，过渡压到 200ms ----------------------------- */
+.xj-hud[data-reduced='true'] .pg-row,
+.xj-hud[data-reduced='true'] .pd-panel,
+.xj-hud [data-reduced='true'] .pg-panel {
+  transition-duration: 200ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pg-row {
+    transition: none;
+  }
+
+  .pg-panel,
+  .pd-panel {
+    transition: 200ms ease-out;
+  }
+}
