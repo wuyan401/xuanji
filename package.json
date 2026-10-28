@@ -1,6 +1,6 @@
 {
   "name": "xuanji",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "private": true,
   "type": "module",
   "description": "璇玑 XUANJI —— 本机全 Agent 实时观测台：把 DSH / Hermes / opencode / Claude Code / Codex 与整机运行数据，画成一台会走动的古代星象仪",

@@ -133,7 +133,8 @@ try {
     if (chips >= 20 && chips === expect) ok('processes.chips', { chips, procs, expect });
     else fail('processes.chips', { chips, procs, expect });
 
-    if (dbg.rails === 3) ok('processes.rails', { rails: dbg.rails });
+    // v2.7 §26 改为五条可见轨道（v2.6 为三轨）；此断言只保证「轨道语义仍在」。
+    if (dbg.rails >= 3) ok('processes.rails', { rails: dbg.rails });
     else fail('processes.rails', { rails: dbg.rails });
 
     if (dbg.flowLines > 0) ok('processes.flow', { flowLines: dbg.flowLines, sceneMs: dbg.sceneMs });

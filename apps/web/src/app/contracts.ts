@@ -109,6 +109,30 @@ export interface ProcessesDebug {
   chipAngularSpeed: number;
   /** v2.6 稳定性：最近窗口内芯片单帧最大 alpha 跳变（期望 ≤0.04） */
   maxAlphaStep: number;
+  /** v2.7 奔流：可见轨道数（固定 5，见 §26.2） */
+  bands: number;
+  /** v2.7 奔流：五条轨道中心半径（世界 px，从上到下 = 重载→沉积） */
+  laneCenters: number[];
+  /** v2.7 奔流：各芯片角速度 rad/s（与 procs 同序） */
+  chipSpeeds: number[];
+  /** v2.7 奔流：各芯片屏幕坐标（CSS px，固定相机；用于验收「确实在动」） */
+  chipScreenPositions: Array<{ x: number; y: number }>;
+  /** v2.7 奔流：各芯片世界半径 px（与 procs 同序；用于核对五轨分布） */
+  chipRadii: number[];
+  /** v2.7 奔流：各芯片所属轨道 0..4（与 procs 同序；0=重载） */
+  chipBands: number[];
+  /** v2.7 奔流：各芯片 pid（验收按 pid 对齐，避免顺序假设） */
+  chipPids: number[];
+  /** v2.7 奔流：各芯片光束发射速率（脉冲/秒，与 procs 同序） */
+  beamRates: number[];
+  /** v2.7 奔流：芯片屏幕宽度范围 [min,max]（外观差异：期望 max ≥30、min ≤12） */
+  chipWidthRange: [number, number];
+  /** v2.7 奔流：核心各层（≥6）半径 / 角速度 / 方向 */
+  coreLayers: Array<{ radius: number; speed: number; direction: 1 | -1 }>;
+  /** v2.7 奔流：核心各层当前角度 rad（用于验收「核心确实在转」） */
+  coreAngles: number[];
+  /** v2.7 奔流：数据涡流粒子数（期望 ≥300） */
+  vortexParticles: number;
 }
 
 export interface FrameStats {

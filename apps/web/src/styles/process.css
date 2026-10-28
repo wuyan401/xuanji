@@ -816,3 +816,90 @@
     transition: 200ms ease-out;
   }
 }
+
+/* ⑦ v2.7 五轨（BIBLE §26.2）：轨道色阶——《工籍》行内竖标 / 《器牒》轨道行共用
+   重载（band 0）最亮 → 沉积（band 4）最暗；主题切换自动换色阶（深空为青蓝系）。 */
+:root {
+  --band-0: #eef4f7;
+  --band-1: #c3d2da;
+  --band-2: #8fa2ac;
+  --band-3: #62727b;
+  --band-4: #3e4950;
+}
+
+:root[data-theme='scifi'] {
+  --band-0: #d6fff6;
+  --band-1: #8df3d4;
+  --band-2: #5fd0ea;
+  --band-3: #2e7f96;
+  --band-4: #1d4a57;
+}
+
+/* 《工籍》：PID 左侧 3px 轨道色竖标（scene 未就绪 → 隐藏，不画假色） */
+.pg-band {
+  position: absolute;
+  left: 2px;
+  top: 3px;
+  bottom: 3px;
+  width: 3px;
+  pointer-events: none;
+  background: transparent;
+}
+
+.pg-band[hidden] {
+  display: none;
+}
+
+.pg-band[data-band='0'] {
+  background: var(--band-0);
+}
+
+.pg-band[data-band='1'] {
+  background: var(--band-1);
+}
+
+.pg-band[data-band='2'] {
+  background: var(--band-2);
+}
+
+.pg-band[data-band='3'] {
+  background: var(--band-3);
+}
+
+.pg-band[data-band='4'] {
+  background: var(--band-4);
+}
+
+/* 《器牒》档案「轨道」行：值前 3px 同色竖标（与《工籍》行内色一致） */
+.pd-value[data-band]::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 11px;
+  margin-right: 7px;
+  vertical-align: -1px;
+  background: var(--band-i, var(--band-2));
+}
+
+.pd-value[data-band='0'] {
+  --band-i: var(--band-0);
+}
+
+.pd-value[data-band='1'] {
+  --band-i: var(--band-1);
+}
+
+.pd-value[data-band='2'] {
+  --band-i: var(--band-2);
+}
+
+.pd-value[data-band='3'] {
+  --band-i: var(--band-3);
+}
+
+.pd-value[data-band='4'] {
+  --band-i: var(--band-4);
+}
+
+/* reduced-motion：竖标是静态信息，无动画需要处理 */
+

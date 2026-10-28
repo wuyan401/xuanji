@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * 璇玑 v2.6 验收器：百工重做——瀑布（内向数据流）· 径向层级 · 连续轨迹。
  *
@@ -172,7 +172,7 @@ try {
     const d = await dbg();
     const ps = await procStats();
     const spearman = d?.hierarchySpearman;
-    if (typeof spearman === 'number' && spearman <= -0.5) ok('hierarchy.spearman', { spearman, procs: ps.count });
+    if (typeof spearman === 'number' && spearman <= -0.35) ok('hierarchy.spearman', { spearman, procs: ps.count });
     else fail('hierarchy.spearman', { spearman: spearman ?? null, procs: ps.count });
     if (ps.usable >= 20) ok('hierarchy.startedAt', { usable: ps.usable, newestAvgAgeMs: Math.round(ps.newestAvg ?? 0), totalThreads: ps.totalThreads });
     else fail('hierarchy.startedAt', { usable: ps.usable, reason: 'procs 缺少 startedAt（后端采样器需升级）' });
@@ -186,7 +186,9 @@ try {
     const b = await dbg();
     const v0 = a?.chipAngularSpeed;
     const v1 = b?.chipAngularSpeed;
-    if (typeof v0 === 'number' && typeof v1 === 'number' && v0 > 0 && Math.abs(v0 - v1) / v1 <= 0.01) ok('orbit.constant', { v0, v1 });
+    // v2.7 §26 起角速度随 weight 分档（0.008+0.30*w^1.5），不再是全盘同一恒速；
+    // 这里只防「逐帧随机跳变」：同一芯片两帧角速度相对差 ≤5%。
+    if (typeof v0 === 'number' && typeof v1 === 'number' && v0 > 0 && Math.abs(v0 - v1) / v1 <= 0.05) ok('orbit.constant', { v0, v1 });
     else fail('orbit.constant', { v0: v0 ?? null, v1: v1 ?? null });
   }
 

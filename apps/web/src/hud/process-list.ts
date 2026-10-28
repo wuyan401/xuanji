@@ -29,6 +29,7 @@ export interface ProcessListHandle {
 
 interface RowRefs {
   root: HTMLButtonElement;
+  band: HTMLElement;
   pid: HTMLElement;
   name: HTMLElement;
   cpu: HTMLElement;
@@ -55,6 +56,28 @@ export function fmtStartClock(startedAt: number | undefined): string {
   const d = new Date(startedAt);
   const pad = (value: number): string => String(value).padStart(2, '0');
   return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** v2.7：只读 scene 调试遥测里的轨道带号（与 procs 同序；取不到返回 null，不报错）。 */
+interface SceneTorrentDebug {
+  chipBands?: unknown;
+}
+
+function readChipBands(): number[] | null {
+  const host = window as unknown as { __astra?: { scene?: { debugProcesses?: () => unknown } } };
+  try {
+    const value = host.__astra?.scene?.debugProcesses?.();
+    if (!value || typeof value !== 'object') return null;
+    const bands = (value as SceneTorrentDebug).chipBands;
+    return Array.isArray(bands) ? (bands as number[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** v2.7：五轨带号（0 重载 … 4 沉积）→ 数据属性；非法值返回 null（不画竖标）。 */
+function bandAttr(value: unknown): string | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 4 ? String(value) : null;
 }
 
 /** 三轨分轨规则（BIBLE §24.3）；《器牒》总览与档案共用。 */
@@ -127,6 +150,9 @@ export function createProcessList(parent: HTMLElement, opts: ProcessListOptions 
   let expanded = false;
 
   function makeRow(pid: number): RowRefs {
+    // v2.7：PID 左侧 3px 轨道色小竖标（scene 未就绪时整条隐藏，不画假色）
+    const bandNode = el('span', { class: 'pg-band', attrs: { 'aria-hidden': 'true' } });
+    bandNode.hidden = true;
     const pidNode = el('span', { class: 'pg-cell pg-pid', text: String(pid) });
     const nameNode = el('span', { class: 'pg-cell pg-name' });
     const cpuNode = el('span', { class: 'pg-cell pg-cpu' });
@@ -139,7 +165,7 @@ export function createProcessList(parent: HTMLElement, opts: ProcessListOptions 
         class: 'pg-row',
         attrs: { type: 'button', 'data-pid': String(pid), 'aria-pressed': 'false' },
       },
-      [pidNode, nameNode, cpuNode, memNode, threadsNode, startedNode],
+      [bandNode, pidNode, nameNode, cpuNode, memNode, threadsNode, startedNode],
     );
     row.addEventListener('click', () => {
       selected = pid;
@@ -148,6 +174,7 @@ export function createProcessList(parent: HTMLElement, opts: ProcessListOptions 
     });
     return {
       root: row,
+      band: bandNode,
       pid: pidNode,
       name: nameNode,
       cpu: cpuNode,
@@ -191,6 +218,10 @@ export function createProcessList(parent: HTMLElement, opts: ProcessListOptions 
     table.hidden = false;
 
     byPid = new Map(procs.map((proc) => [proc.pid, proc]));
+    // v2.7：轨道带号按 procs 同序对齐（scene 未就绪 → null，行内不画竖标）
+    const bands = readChipBands();
+    const procIndex = new Map<number, number>();
+    if (bands) procs.forEach((proc, index) => procIndex.set(proc.pid, index));
     // 严格按当前 CPU 降序：每次遥测（2s 一帧）都重排，不留 8s 保序窗口
     order = procs
       .slice()
@@ -214,9 +245,16 @@ export function createProcessList(parent: HTMLElement, opts: ProcessListOptions 
       setText(refs.mem, fmtBytes(proc.memBytes));
       setText(refs.threads, typeof proc.threads === 'number' ? String(proc.threads) : '—');
       setText(refs.started, relAge(proc.startedAt));
+      // v2.7：行内轨道色竖标（band 0–4；scene 未就绪或越界 → 隐藏，不画假色）
+      const band = bands ? bandAttr(bands[procIndex.get(pid) ?? -1]) : null;
+      refs.band.hidden = band == null;
+      if (band == null) delete refs.band.dataset.band;
+      else refs.band.dataset.band = band;
       const title = `PID ${pid} · ${proc.name} · CPU ${proc.cpuPct.toFixed(1)}% · 内存 ${fmtBytes(proc.memBytes)}${
         typeof proc.threads === 'number' ? ` · 线程 ${proc.threads}` : ''
-      }${proc.startedAt && proc.startedAt > 0 ? ` · 启动 ${fmtStartClock(proc.startedAt)}（${relAge(proc.startedAt)}）` : ''}`;
+      }${proc.startedAt && proc.startedAt > 0 ? ` · 启动 ${fmtStartClock(proc.startedAt)}（${relAge(proc.startedAt)}）` : ''}${
+        band != null ? ` · 轨道 L${band}` : ''
+      }`;
       refs.root.title = title;
       refs.root.setAttribute('aria-label', title);
       refs.root.setAttribute('aria-pressed', selected === pid ? 'true' : 'false');

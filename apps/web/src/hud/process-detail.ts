@@ -29,6 +29,9 @@ export interface ProcessDetailHandle {
   dispose(): void;
 }
 
+/** v2.7 五条轨道（BIBLE §26.2）：0 重载（最内最亮）… 4 沉积（最外最暗） */
+const BAND_LABEL = ['重载', '活跃', '常规', '轻载', '沉积'] as const;
+
 interface Aggregates {
   count: number;
   cpuSum: number;
@@ -81,10 +84,14 @@ function infoRow(label: string, extraClass = ''): { row: HTMLElement; value: HTM
   return { row, value };
 }
 
-/** v2.6：只读 scene 调试遥测（入口流量 / 在途包）；取不到一律 null，不报错。 */
+/** v2.6：只读 scene 调试遥测（入口流量 / 在途包）；v2.7 追加轨道带号/角速度/光束频率。
+ *  取不到一律 null / 缺字段「—」，不报错、不发假值。 */
 interface SceneProcessesDebug {
   packets?: number;
   entryFlow?: number;
+  chipBands?: number[];
+  chipSpeeds?: number[];
+  beamRates?: number[];
 }
 
 function readProcessesDebug(): SceneProcessesDebug | null {
@@ -180,6 +187,10 @@ export function createProcessDetail(parent: HTMLElement, opts: ProcessDetailOpti
   const dStartedRow = infoRow('启动于', 'is-mono is-wide');
   const railValue = el('dd', { class: 'pd-value pd-rail-tag' });
   const railValueRow = el('div', { class: 'pd-row' }, [el('dt', { class: 'pd-label', text: '所属轨' }), railValue]);
+  // v2.7 档案新增（在「所属轨」之后）：轨道 / 轨道速度 / 光束频率（scene 遥测，按 procs 同序）
+  const dBandRow = infoRow('轨道', 'is-mono is-wide');
+  const dLaneSpeedRow = infoRow('轨道速度', 'is-mono is-wide');
+  const dBeamRow = infoRow('光束频率', 'is-mono is-wide');
   const info = el('dl', { class: 'pd-table pd-table--detail' }, [
     pidRow.row,
     nameRow.row,
@@ -188,6 +199,9 @@ export function createProcessDetail(parent: HTMLElement, opts: ProcessDetailOpti
     dThreadsRow.row,
     dStartedRow.row,
     railValueRow,
+    dBandRow.row,
+    dLaneSpeedRow.row,
+    dBeamRow.row,
   ]);
   const detailTitle = el('div', { class: 'pd-sec-title' }, [
     el('h3', { class: 'pd-sec-heading', text: '档案' }),
@@ -290,6 +304,32 @@ export function createProcessDetail(parent: HTMLElement, opts: ProcessDetailOpti
       el('span', { class: 'pd-rail-mark', attrs: { 'aria-hidden': 'true' } }),
       el('span', { class: 'pd-rail-label', text: RAIL_LABEL[rail] }),
     );
+
+    // v2.7：《器牒》档案新增三行——轨道 / 轨道速度 / 光束频率。
+    // 数据来源：scene.debugProcesses() 的 chipBands/chipSpeeds/beamRates（与 procs 同序），
+    // 用本地快照的 procs 顺序找 pid 下标对齐；scene 未就绪或下标越界时一律「—」，不发假值。
+    const debug = readProcessesDebug();
+    const procs = snapshot?.procs ?? [];
+    const procIdx = procs.findIndex((entry) => entry.pid === proc.pid);
+    const band = procIdx >= 0 && debug && Array.isArray(debug.chipBands) ? debug.chipBands[procIdx] : undefined;
+    const speed = procIdx >= 0 && debug && Array.isArray(debug.chipSpeeds) ? debug.chipSpeeds[procIdx] : undefined;
+    const beam = procIdx >= 0 && debug && Array.isArray(debug.beamRates) ? debug.beamRates[procIdx] : undefined;
+    const bandOk = typeof band === 'number' && Number.isInteger(band) && band >= 0 && band < BAND_LABEL.length;
+    setText(dBandRow.value, bandOk ? `${band} ${BAND_LABEL[band as number]}` : '—');
+    if (bandOk) dBandRow.value.dataset.band = String(band);
+    else delete dBandRow.value.dataset.band;
+    dBandRow.value.title = bandOk
+      ? `五轨之一：L${band} ${BAND_LABEL[band as number]}（scene 盘面同色）`
+      : 'scene 轨道遥测暂不可用';
+    setText(
+      dLaneSpeedRow.value,
+      typeof speed === 'number' && Number.isFinite(speed) ? `${speed.toFixed(3)} rad/s` : '—',
+    );
+    dLaneSpeedRow.value.title =
+      typeof speed === 'number' && Number.isFinite(speed) ? '芯片角速度（rad/s，scene 按权重解析生成）' : 'scene 轨道遥测暂不可用';
+    setText(dBeamRow.value, typeof beam === 'number' && Number.isFinite(beam) ? `${beam.toFixed(1)} 次/秒` : '—');
+    dBeamRow.value.title =
+      typeof beam === 'number' && Number.isFinite(beam) ? '该芯光束脉冲发射速率（次/秒）' : 'scene 轨道遥测暂不可用';
   }
 
   function setOpen(next: boolean): void {
