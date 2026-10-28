@@ -95,6 +95,20 @@ export interface ProcessesDebug {
   selectedPid: number | null;
   /** 最近一帧 scene 耗时 ms */
   sceneMs: number;
+  /** v2.6 瀑布：在飞行中的内向数据包数量（期望 ≥300） */
+  packets: number;
+  /** v2.6 瀑布：数据包内向速度（世界 px/s，期望恒定） */
+  packetSpeed: number;
+  /** v2.6 瀑布：同帧内数据包速度的变异系数（|max-min|/avg，期望 ≤0.05） */
+  packetSpeedVar: number;
+  /** v2.6 瀑布：外圈入口雨幕的流线数量（∝ 线程总数，期望 >0） */
+  entryFlow: number;
+  /** v2.6 径向层级：芯片权重（占用/新旧）与半径的 Spearman 秩相关（期望 ≤ -0.5） */
+  hierarchySpearman: number;
+  /** v2.6 轨迹：芯片角速度 rad/s（恒定，非随机） */
+  chipAngularSpeed: number;
+  /** v2.6 稳定性：最近窗口内芯片单帧最大 alpha 跳变（期望 ≤0.04） */
+  maxAlphaStep: number;
 }
 
 export interface FrameStats {

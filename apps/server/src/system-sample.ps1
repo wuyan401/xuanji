@@ -188,6 +188,9 @@ while ($true) {
             $cpuPct = [Math]::Round(($cpuDeltaMs / $elapsedCpuMs) * 100.0 / $coreCount, 1)
             $threadCount = 0
             try { $threadCount = $process.Threads.Count } catch { }
+            # v2.6 百工：进程启动时间（epoch ms），供「启动越新越靠内」的径向层级使用；受保护进程取 0。
+            $startedAt = 0
+            try { $startedAt = [long]([DateTimeOffset]$process.StartTime).ToUnixTimeMilliseconds() } catch { }
             $nextPrev[$process.Id] = $process.TotalProcessorTime.TotalMilliseconds
             $procs += @{
                 pid = $process.Id
@@ -195,6 +198,7 @@ while ($true) {
                 cpuPct = $cpuPct
                 memBytes = [long]$process.WorkingSet64
                 threads = $threadCount
+                startedAt = $startedAt
                 _cpu = $cpuDeltaMs
             }
         }
@@ -203,7 +207,7 @@ while ($true) {
     $prevProcAt = $procAt
     $procs = @($procs | Sort-Object -Property @{ Expression = { $_.cpuPct }; Descending = $true }, @{ Expression = { $_.memBytes }; Descending = $true } | Select-Object -First $procLimit)
     $procs = @($procs | ForEach-Object {
-        @{ pid = $_.pid; name = $_.name; cpuPct = $_.cpuPct; memBytes = $_.memBytes; threads = $_.threads }
+        @{ pid = $_.pid; name = $_.name; cpuPct = $_.cpuPct; memBytes = $_.memBytes; threads = $_.threads; startedAt = $_.startedAt }
     })
 
     # --- battery (cheap enough every 8th sample) ---------------------------

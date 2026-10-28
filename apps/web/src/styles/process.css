@@ -177,7 +177,7 @@
 
 .pg-head-row {
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr) 58px 62px 34px;
+  grid-template-columns: 52px minmax(0, 1fr) 58px 62px 34px 56px;
   align-items: center;
   gap: 8px;
   height: 22px;
@@ -198,7 +198,8 @@
 
 .pg-th.pg-cpu,
 .pg-th.pg-mem,
-.pg-th.pg-threads {
+.pg-th.pg-threads,
+.pg-th.pg-started {
   text-align: right;
 }
 
@@ -213,7 +214,7 @@
 
 .pg-row {
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr) 58px 62px 34px;
+  grid-template-columns: 52px minmax(0, 1fr) 58px 62px 34px 56px;
   align-items: center;
   gap: 8px;
   width: 100%;
@@ -267,7 +268,8 @@
 .pg-pid,
 .pg-cpu,
 .pg-mem,
-.pg-threads {
+.pg-threads,
+.pg-started {
   font-family: var(--font-mono);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
@@ -287,9 +289,16 @@
 
 .pg-cpu,
 .pg-mem,
-.pg-threads {
+.pg-threads,
+.pg-started {
   text-align: right;
   color: var(--pg-dim);
+}
+
+/* v2.6：启动列（相对时间）比数值列更退后，只做「可扫读」的辅助信息 */
+.pg-started {
+  color: var(--pg-faint);
+  letter-spacing: 0.03em;
 }
 
 .pg-row[aria-pressed='true'] .pg-name {
@@ -679,22 +688,28 @@
   }
 
   .pg-row {
-    grid-template-columns: 44px minmax(0, 1fr) 52px 54px 28px;
+    grid-template-columns: 44px minmax(0, 1fr) 52px 54px 50px;
     height: 32px;
     padding: 0 12px;
     gap: 6px;
   }
 
   .pg-head-row {
-    grid-template-columns: 44px minmax(0, 1fr) 52px 54px 28px;
+    grid-template-columns: 44px minmax(0, 1fr) 52px 54px 50px;
     padding: 0 12px;
     gap: 6px;
+  }
+
+  /* A2：≤720 抽屉内空间不够 → 优先隐藏「线程」，保留「启动」列 */
+  .pg-threads {
+    display: none;
   }
 
   .pg-pid,
   .pg-cpu,
   .pg-mem,
-  .pg-threads {
+  .pg-threads,
+  .pg-started {
     font-size: 10.5px;
   }
 

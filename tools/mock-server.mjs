@@ -282,6 +282,13 @@ const PROC_NAMES = [
   'opencode.exe', 'claude.exe', 'RPGMV.exe', 'nw.exe', 'ffmpeg.exe', 'obs64.exe',
   'Everything.exe', 'WinRAR.exe', 'Notepad.exe', 'Taskmgr.exe', 'cmd.exe', 'pycharm64.exe',
 ];
+
+// v2.6 百工径向层级：每个 mock 进程一个稳定的启动时间（不随采样变化），前 9 个「忙进程」较新。
+const PROC_STARTED_AT = PROC_NAMES.map((_, idx) => {
+  const ageSec = idx < 9 ? rr(60, 18_000) : idx > 54 ? rr(86_400, 2_592_000) : rr(600, 604_800);
+  return Date.now() - Math.round(ageSec) * 1000;
+});
+
 const systemState = {
   cpu: 0.23,
   perCore: Array.from({ length: CORES }, () => rr(0.08, 0.42)),
@@ -318,6 +325,8 @@ function systemSnapshot() {
       cpuPct: Number(busy.toFixed(1)),
       memBytes: Math.round(memMb * 1024 * 1024),
       threads: Math.max(1, Math.round(idx < 9 ? rr(12, 90) : rr(1, 40))),
+      // v2.6 百工径向层级：启动时间（稳定值，不随采样变化）
+      startedAt: PROC_STARTED_AT[idx],
     };
   }).sort((a, b) => b.cpuPct - a.cpuPct);
   const snap = {

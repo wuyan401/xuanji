@@ -37,6 +37,7 @@ export function normalizeSample(raw, now = Date.now()) {
           cpuPct: Math.round(num(proc?.cpuPct) * 10) / 10,
           memBytes: Math.round(num(proc?.memBytes)),
           threads: Math.round(num(proc?.threads)),
+          startedAt: Math.round(num(proc?.startedAt)),
         }))
         .slice(0, PROCS_TOP)
     : [];

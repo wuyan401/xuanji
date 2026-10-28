@@ -3,9 +3,10 @@
 // 选中 = 单进程档案（PID / 名称 / CPU% / 内存 / 线程 / 所属轨）+「← 进程总览」返回行。
 // 机械、精确、无感情：骨白 / 钢灰 / 冷白；无呼吸、无缓动（主题/视图切换淡入除外）；不显示 0 值假数据。
 import { el, setText } from '../lib/dom';
+import { formatNumber } from '../lib/format';
 import type { ProcInfo, SourceKind, SystemSnapshot } from '../state/types';
 import { fmtBytes, fmtPct } from './system-format';
-import { RAIL_LABEL, railOf } from './process-list';
+import { RAIL_LABEL, fmtStartClock, railOf, relAge } from './process-list';
 import { makeCloseButton } from './ui';
 
 export interface ProcessDetailOptions {
@@ -80,6 +81,22 @@ function infoRow(label: string, extraClass = ''): { row: HTMLElement; value: HTM
   return { row, value };
 }
 
+/** v2.6：只读 scene 调试遥测（入口流量 / 在途包）；取不到一律 null，不报错。 */
+interface SceneProcessesDebug {
+  packets?: number;
+  entryFlow?: number;
+}
+
+function readProcessesDebug(): SceneProcessesDebug | null {
+  const host = window as unknown as { __astra?: { scene?: { debugProcesses?: () => unknown } } };
+  try {
+    const value = host.__astra?.scene?.debugProcesses?.();
+    return value && typeof value === 'object' ? (value as SceneProcessesDebug) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function createProcessDetail(parent: HTMLElement, opts: ProcessDetailOptions = {}): ProcessDetailHandle {
   const tab = el('button', {
     class: 'pd-tab',
@@ -107,7 +124,17 @@ export function createProcessDetail(parent: HTMLElement, opts: ProcessDetailOpti
   const cpuRow = infoRow('CPU 总负载');
   const memRow = infoRow('内存占用');
   const threadsRow = infoRow('线程总数');
-  const table = el('dl', { class: 'pd-table' }, [countRow.row, cpuRow.row, memRow.row, threadsRow.row]);
+  // v2.6 总览新增：入口流量 / 在途包（scene 调试遥测，防御式取值）
+  const entryFlowRow = infoRow('入口流量');
+  const packetsRow = infoRow('在途包');
+  const table = el('dl', { class: 'pd-table' }, [
+    countRow.row,
+    cpuRow.row,
+    memRow.row,
+    threadsRow.row,
+    entryFlowRow.row,
+    packetsRow.row,
+  ]);
 
   const railTitle = el('div', { class: 'pd-sec-title pd-sec-title--rails' }, [
     el('h3', { class: 'pd-sec-heading', text: '三轨' }),
@@ -149,6 +176,8 @@ export function createProcessDetail(parent: HTMLElement, opts: ProcessDetailOpti
   const dCpuRow = infoRow('CPU', 'is-mono');
   const dMemRow = infoRow('内存', 'is-mono');
   const dThreadsRow = infoRow('线程', 'is-mono');
+  // v2.6 档案新增：启动于（绝对 MM-DD HH:mm + 距今）
+  const dStartedRow = infoRow('启动于', 'is-mono is-wide');
   const railValue = el('dd', { class: 'pd-value pd-rail-tag' });
   const railValueRow = el('div', { class: 'pd-row' }, [el('dt', { class: 'pd-label', text: '所属轨' }), railValue]);
   const info = el('dl', { class: 'pd-table pd-table--detail' }, [
@@ -157,6 +186,7 @@ export function createProcessDetail(parent: HTMLElement, opts: ProcessDetailOpti
     dCpuRow.row,
     dMemRow.row,
     dThreadsRow.row,
+    dStartedRow.row,
     railValueRow,
   ]);
   const detailTitle = el('div', { class: 'pd-sec-title' }, [
@@ -213,6 +243,14 @@ export function createProcessDetail(parent: HTMLElement, opts: ProcessDetailOpti
       memRow.value.title = `占物理内存 ${fmtPct(agg.memPct ?? 0)} · 共 ${fmtBytes(totalMem)}`;
     }
     setText(threadsRow.value, agg.count > 0 ? String(agg.threadsSum) : '—');
+    // v2.6：入口流量 / 在途包来自 scene 调试遥测（2s 帧节流，取不到显示「—」）
+    const debug = readProcessesDebug();
+    const entryFlow = debug && typeof debug.entryFlow === 'number' ? debug.entryFlow : null;
+    const packets = debug && typeof debug.packets === 'number' ? debug.packets : null;
+    setText(entryFlowRow.value, entryFlow != null ? `${formatNumber(entryFlow)} 条` : '—');
+    setText(packetsRow.value, packets != null ? `${formatNumber(packets)} 个` : '—');
+    entryFlowRow.value.title = entryFlow != null ? '外圈入口雨幕的流线条数（scene 遥测）' : 'scene 遥测暂不可用';
+    packetsRow.value.title = packets != null ? '瀑布在途数据包数量（scene 遥测）' : 'scene 遥测暂不可用';
     setText(railCpuValue, String(agg.rails.cpu));
     setText(railMemValue, String(agg.rails.mem));
     setText(railDormantValue, String(agg.rails.dormant));
@@ -239,6 +277,12 @@ export function createProcessDetail(parent: HTMLElement, opts: ProcessDetailOpti
     setText(dCpuRow.value, `${proc.cpuPct.toFixed(1)}%`);
     setText(dMemRow.value, fmtBytes(proc.memBytes));
     setText(dThreadsRow.value, typeof proc.threads === 'number' ? String(proc.threads) : '—');
+    setText(
+      dStartedRow.value,
+      typeof proc.startedAt === 'number' && proc.startedAt > 0 ? `${fmtStartClock(proc.startedAt)} · ${relAge(proc.startedAt)}` : '—',
+    );
+    dStartedRow.value.title =
+      typeof proc.startedAt === 'number' && proc.startedAt > 0 ? new Date(proc.startedAt).toLocaleString('zh-CN') : '';
     const rail = railOf(proc);
     railValue.dataset.rail = rail;
     railValue.textContent = '';

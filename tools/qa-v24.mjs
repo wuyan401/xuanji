@@ -292,8 +292,41 @@ if (!s0) {
   // ---------- 3. connect / disconnect ----------
   const liveReq = await setSyntheticLive(3);
   const liveIds = liveReq?.ids || [];
-  await pushLiveEvents(liveIds);
-  const conn = await waitStreams((s) => s.connecting >= 1, 1200, 40);
+  // connect 相位只有 320ms，跨进程 evaluate 往返在重负载下可能错过窗口；
+  // 这里在页面内完成「推事件 + 40ms 步进采样」，避免测试自身的时相误差。
+  const conn = await page.evaluate((ids) => {
+    const scene = window.__astra && window.__astra.scene;
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const now = Date.now();
+    if (scene && typeof scene.pushEvents === 'function') {
+      scene.pushEvents(
+        ids.map((id, i) => ({
+          id: `qa-v24-live-${now}-${i}`,
+          at: now + i,
+          kind: 'session/live',
+          sessionId: id,
+          sessionTitle: id,
+          tool: null,
+          toolCategory: null,
+          detail: null,
+          isError: false,
+          turn: null,
+          step: null,
+          durationMs: null,
+        })),
+      );
+    }
+    return (async () => {
+      let last = scene?.debugStreams?.() ?? null;
+      for (let i = 0; i < 30; i += 1) {
+        const d = scene?.debugStreams?.() ?? null;
+        if (d) last = d;
+        if (d && (d.connecting || 0) >= 1) return d;
+        await sleep(40);
+      }
+      return last;
+    })();
+  }, liveIds);
   if (conn && conn.connecting >= 1) ok('streams.connect', { connecting: conn.connecting, active: conn.active, seeded: liveIds.length });
   else fail('streams.connect', { ...(conn || {}), seeded: liveIds.length });
 

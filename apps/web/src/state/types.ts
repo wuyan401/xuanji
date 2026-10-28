@@ -214,6 +214,8 @@ export interface ProcInfo {
   memBytes: number;
   /** 线程数（可选；Windows 采样器提供，历史样本可能缺失） */
   threads?: number;
+  /** 启动时间 epoch ms（可选；用于百工的「越新越靠内」径向层级） */
+  startedAt?: number;
 }
 
 export interface BatteryInfo {

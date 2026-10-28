@@ -247,6 +247,8 @@ export interface SystemProc {
   name: string;
   cpuPct: number;       // 百分比数值（10 = 10%，即 0..100，不是 0..1）
   memBytes: number;     // WorkingSet64 字节
+  threads: number;      // 线程数（v2.5 起）
+  startedAt: number;    // 进程启动时间 epoch ms（v2.6 起；受保护进程可能为 0）
 }
 
 export interface SystemBattery {
@@ -263,7 +265,7 @@ export interface SystemSample {
   mem: SystemMem;
   disks: SystemDisk[];
   net: SystemNet;
-  procs: SystemProc[];  // top 12（按内存降序）
+  procs: SystemProc[];  // 最多 220 条（v2.5 起；早期版本为 top 12）
   uptimeSec: number;    // 系统运行时间（秒）
   battery: SystemBattery | null; // 无电池（台式机）→ null
 }

@@ -34,6 +34,27 @@ interface RowRefs {
   cpu: HTMLElement;
   mem: HTMLElement;
   threads: HTMLElement;
+  started: HTMLElement;
+}
+
+/** v2.6：启动时间 → 相对时间（12s / 3m / 2h / 3d）；缺失或 ≤0 → 「—」 */
+export function relAge(startedAt: number | undefined, now: number = Date.now()): string {
+  if (typeof startedAt !== 'number' || !Number.isFinite(startedAt) || startedAt <= 0) return '—';
+  const sec = Math.max(0, Math.floor((now - startedAt) / 1000));
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m`;
+  const hour = Math.floor(min / 60);
+  if (hour < 24) return `${hour}h`;
+  return `${Math.floor(hour / 24)}d`;
+}
+
+/** v2.6：启动时间 → 绝对时刻 `MM-DD HH:mm`；缺失或 ≤0 → 「—」 */
+export function fmtStartClock(startedAt: number | undefined): string {
+  if (typeof startedAt !== 'number' || !Number.isFinite(startedAt) || startedAt <= 0) return '—';
+  const d = new Date(startedAt);
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 /** 三轨分轨规则（BIBLE §24.3）；《器牒》总览与档案共用。 */
@@ -73,6 +94,7 @@ export function createProcessList(parent: HTMLElement, opts: ProcessListOptions 
     el('span', { class: 'pg-th pg-cpu', text: 'CPU', attrs: { role: 'columnheader' } }),
     el('span', { class: 'pg-th pg-mem', text: '内存', attrs: { role: 'columnheader' } }),
     el('span', { class: 'pg-th pg-threads', text: '线程', attrs: { role: 'columnheader' } }),
+    el('span', { class: 'pg-th pg-started', text: '启动', attrs: { role: 'columnheader' } }),
   ]);
   const body = el('div', { class: 'pg-body', attrs: { role: 'rowgroup' } });
   const table = el('div', { class: 'pg-table', attrs: { role: 'table', 'aria-label': '进程名册，按 CPU 降序' } }, [
@@ -110,20 +132,29 @@ export function createProcessList(parent: HTMLElement, opts: ProcessListOptions 
     const cpuNode = el('span', { class: 'pg-cell pg-cpu' });
     const memNode = el('span', { class: 'pg-cell pg-mem' });
     const threadsNode = el('span', { class: 'pg-cell pg-threads' });
+    const startedNode = el('span', { class: 'pg-cell pg-started' });
     const row = el(
       'button',
       {
         class: 'pg-row',
         attrs: { type: 'button', 'data-pid': String(pid), 'aria-pressed': 'false' },
       },
-      [pidNode, nameNode, cpuNode, memNode, threadsNode],
+      [pidNode, nameNode, cpuNode, memNode, threadsNode, startedNode],
     );
     row.addEventListener('click', () => {
       selected = pid;
       syncPressed();
       opts.onSelectProcess?.(pid);
     });
-    return { root: row, pid: pidNode, name: nameNode, cpu: cpuNode, mem: memNode, threads: threadsNode };
+    return {
+      root: row,
+      pid: pidNode,
+      name: nameNode,
+      cpu: cpuNode,
+      mem: memNode,
+      threads: threadsNode,
+      started: startedNode,
+    };
   }
 
   function syncPressed(): void {
@@ -182,9 +213,10 @@ export function createProcessList(parent: HTMLElement, opts: ProcessListOptions 
       setText(refs.cpu, `${proc.cpuPct.toFixed(1)}%`);
       setText(refs.mem, fmtBytes(proc.memBytes));
       setText(refs.threads, typeof proc.threads === 'number' ? String(proc.threads) : '—');
+      setText(refs.started, relAge(proc.startedAt));
       const title = `PID ${pid} · ${proc.name} · CPU ${proc.cpuPct.toFixed(1)}% · 内存 ${fmtBytes(proc.memBytes)}${
         typeof proc.threads === 'number' ? ` · 线程 ${proc.threads}` : ''
-      }`;
+      }${proc.startedAt && proc.startedAt > 0 ? ` · 启动 ${fmtStartClock(proc.startedAt)}（${relAge(proc.startedAt)}）` : ''}`;
       refs.root.title = title;
       refs.root.setAttribute('aria-label', title);
       refs.root.setAttribute('aria-pressed', selected === pid ? 'true' : 'false');
