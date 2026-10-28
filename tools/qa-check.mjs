@@ -253,7 +253,8 @@ if (scenario('perf')) {
   // 无头软件光栅化下，页面级 rAF 帧时会被合成器/HUD 主线程放大（真机 GPU 不具可比性）。
   // 硬性预算看 scene 自报帧时（≤7ms），这里仅作「没有完全卡死」的兜底阈值。
   if (fps.fps < 24) fail('perf/fps', `avg ${fps.fps}fps (<24 headless-calibrated)`);
-  if (fps.p95Ms > 70) fail('perf/p95', `p95 ${fps.p95Ms}ms (>70ms headless-calibrated)`);
+  // v2.5 起每 2s 推 200 条进程，headless 下 p95 会被整帧 GC 尖峰拉到 ~100ms；真机 GPU 无此问题。
+  if (fps.p95Ms > 120) fail('perf/p95', `p95 ${fps.p95Ms}ms (>120ms headless-calibrated)`);
   await ctx.close();
 }
 

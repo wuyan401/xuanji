@@ -912,10 +912,10 @@ export function createScene(
     micro.update(env, view);
     air.update(env, view);
     sky.update(env);
-    // —— §19.2：整机遥测 2s 一帧 → 平滑插值（观星时也保持显示值跟手，切回即用）
-    plate.update(env);
-    // —— v2.5 §24：百工盘面（芯片数据插值 / 严格 1Hz 节拍 / 240ms 线性进出）
-    processes.update(env);
+    // —— §19.2：整机遥测 2s 一帧 → 平滑插值（只在整机视图推进；切回时由 applyView 重新对齐）
+    if (currentView === 'system') plate.update(env);
+    // —— v2.5 §24：百工盘面（芯片数据插值 / 严格 1Hz 节拍 / 240ms 线性进出；只在百工视图推进）
+    if (currentView === 'processes') processes.update(env);
     // —— §22.4 机器运转 / §22.6 复合核心
     fx.update({ dt, now });
     core.update(env, view, beat.energy);
