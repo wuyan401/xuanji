@@ -35,6 +35,8 @@ const KEY_ROWS: KeyRow[] = [
   { keys: '`', action: '统计覆层', note: '帧率与画质' },
   { keys: 'W', action: '藏 / 显界面' },
   { keys: 'T', action: '切换主题', note: '璇玑（青铜史书）／ 深空（舰桥仪表）' },
+  { keys: '[', action: '收放左下面板', note: '起居注 ／ 机枢 ／ 工籍' },
+  { keys: ']', action: '收放右方面板', note: '星牒 ／ 器录 ／ 器牒' },
   { keys: 'Esc', action: '收起浮层 · 取消选中' },
   { keys: 'Tab', action: '在打开的浮层内循环' },
 ];

@@ -11,6 +11,8 @@ const TOP_N = 24;
 export interface ProcessListOptions {
   /** 点一行 → 请求选中该进程（null = 清选） */
   onSelectProcess?(pid: number | null): void;
+  /** v2.9 面板收放：true = 展开，false = 收起成 44px 胶囊 */
+  onOpenChange?(open: boolean): void;
 }
 
 export interface ProcessListHandle {
@@ -24,6 +26,9 @@ export interface ProcessListHandle {
   /** 焦点交给第一行（L 键 / 可访问性） */
   focusFirst(): boolean;
   setReducedMotion(reduced: boolean): void;
+  /** v2.9：桌面端收起 / 展开（true = 收起成 44px 胶囊）；不触发 onOpenChange */
+  setFolded(folded: boolean): void;
+  isFolded(): boolean;
   dispose(): void;
 }
 
@@ -101,6 +106,18 @@ export function createProcessList(parent: HTMLElement, opts: ProcessListOptions 
   grip.append(el('span', { class: 'pg-grip-line', attrs: { 'aria-hidden': 'true' } }));
 
   const meta = el('span', { class: 'pg-meta', text: '候帧……' });
+  // v2.9 面板收放：收起成 44px 胶囊（标题 + N 进程 + ▸），桌面可见、移动端隐藏
+  const foldSummary = el('span', { class: 'pg-fold-summary', text: '候帧' });
+  const foldBtn = el('button', {
+    class: 'panel-fold pg-fold',
+    attrs: {
+      type: 'button',
+      'data-hud': 'worklist-collapse',
+      'aria-label': '收起《工籍》',
+      'aria-expanded': 'true',
+    },
+  });
+  foldBtn.textContent = '—';
   const stamp = el('span', { class: 'pg-stamp', text: '工籍', attrs: { 'aria-hidden': 'true' } });
   const head = el('header', { class: 'pg-head' }, [
     stamp,
@@ -109,6 +126,8 @@ export function createProcessList(parent: HTMLElement, opts: ProcessListOptions 
       el('span', { class: 'pg-sub', text: '器群名册 · 按 CPU 降序' }),
     ]),
     meta,
+    foldSummary,
+    foldBtn,
   ]);
 
   const headerRow = el('div', { class: 'pg-head-row', attrs: { role: 'row' } }, [
@@ -148,6 +167,8 @@ export function createProcessList(parent: HTMLElement, opts: ProcessListOptions 
   let source: SourceKind | null = null;
   let reduced = false;
   let expanded = false;
+  /** v2.9：桌面端收起成 44px 胶囊 */
+  let folded = false;
 
   function makeRow(pid: number): RowRefs {
     // v2.7：PID 左侧 3px 轨道色小竖标（scene 未就绪时整条隐藏，不画假色）
@@ -203,7 +224,26 @@ export function createProcessList(parent: HTMLElement, opts: ProcessListOptions 
   function writeMeta(): void {
     const suffix = source === 'demo' ? ' · 演' : '';
     setText(meta, order.length > 0 ? `${order.length} 行 · 2s${suffix}` : source === 'demo' ? `演练${suffix}` : '候帧');
+    setText(foldSummary, order.length > 0 ? `${order.length} 进程` : '候帧');
   }
+
+  // ── v2.9 面板收放（BIBLE §28）：收起成 44px 胶囊，表体不参与点击/读屏 ──
+  function setFolded(next: boolean): void {
+    folded = next;
+    root.dataset.folded = next ? 'true' : 'false';
+    foldBtn.textContent = next ? '▸' : '—';
+    foldBtn.setAttribute('aria-expanded', next ? 'false' : 'true');
+    foldBtn.setAttribute('aria-label', next ? '展开《工籍》' : '收起《工籍》');
+    table.setAttribute('aria-hidden', next ? 'true' : 'false');
+    empty.setAttribute('aria-hidden', next ? 'true' : 'false');
+    if (!next) return;
+    root.dataset.expanded = 'false';
+    grip.setAttribute('aria-expanded', 'false');
+  }
+  foldBtn.addEventListener('click', () => {
+    setFolded(root.dataset.folded !== 'true');
+    opts.onOpenChange?.(!folded);
+  });
 
   function setSystem(snapshot: SystemSnapshot | null): void {
     const available = !!snapshot && snapshot.available;
@@ -303,6 +343,8 @@ export function createProcessList(parent: HTMLElement, opts: ProcessListOptions 
       root.classList.toggle('is-reduced', reduced);
       void reduced;
     },
+    setFolded,
+    isFolded: () => folded,
     dispose(): void {
       rows.clear();
       root.remove();

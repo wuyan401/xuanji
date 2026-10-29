@@ -1,0 +1,289 @@
+/* XUANJI · 璇玑 — v2.9 面板收放（BIBLE §28）
+ * 四块常驻面板桌面端可收起成 44px 胶囊；右侧《器牒》收起为竖签。
+ * 移动端沿用既有抽屉/sheet：.panel-fold 隐藏、[data-folded='true'] 规则不生效。
+ * 收放只动 height/width + opacity（BIBLE §12：禁 translate 入场）；reduced-motion 压到 100ms。
+ */
+
+/* ── 幽灵收起按钮（20×20，标题右侧）──────────────────────────── */
+.panel-fold {
+  appearance: none;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin: 0 0 0 4px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--bone-400);
+  font: 500 12px/1 var(--font-mono);
+  letter-spacing: 0;
+  cursor: pointer;
+  transition:
+    color 160ms var(--ease-out),
+    border-color 160ms var(--ease-out),
+    background-color 160ms var(--ease-out);
+}
+.panel-fold:hover {
+  color: var(--gold-200);
+  border-color: var(--ink-line-strong);
+  background: rgba(232, 200, 120, 0.06);
+}
+.panel-fold:focus-visible {
+  outline: 2px solid var(--gold-300);
+  outline-offset: 4px;
+}
+.panel-fold[aria-expanded='false'] {
+  color: var(--gold-300);
+}
+
+/* ── 收起摘要 / 按钮：展开时隐藏，收起时出现 ─────────────────── */
+.led-fold-summary,
+.sys-fold-summary,
+.pg-fold-summary {
+  display: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 500 11px/1 var(--font-mono);
+  letter-spacing: 0.04em;
+  color: var(--fg-dim);
+}
+
+/* ── 左下三块：收起成 44px 高胶囊（宽 ≤220px，底边仍在左下角）── */
+.led,
+.sys-panel,
+.pg-panel {
+  transition:
+    max-height 220ms var(--ease-out),
+    height 220ms var(--ease-out),
+    width 220ms var(--ease-out),
+    padding 220ms var(--ease-out),
+    opacity 220ms var(--ease-out);
+  will-change: max-height, width;
+}
+.led[data-folded='true'],
+.sys-panel[data-folded='true'],
+.pg-panel[data-folded='true'] {
+  width: min(220px, calc(100vw - 40px));
+  height: 44px;
+  max-height: 44px;
+  min-height: 44px;
+  padding: 0 10px;
+  overflow: hidden;
+  cursor: default;
+}
+.sys-panel[data-folded='true'] {
+  height: 44px;
+  max-height: 44px;
+  min-height: 44px;
+}
+.pg-panel[data-folded='true'] {
+  height: 44px;
+  max-height: 44px;
+  min-height: 44px;
+}
+
+/* 收起时：正文/页脚/元信息退场，只留标题 + 摘要 + ▸ */
+.led[data-folded='true'] .led-grip,
+.led[data-folded='true'] .led-body,
+.led[data-folded='true'] .led-offline,
+.led[data-folded='true'] .led-head-right,
+.led[data-folded='true'] .led-title-sub,
+.led[data-folded='true'] .led-vertical {
+  display: none !important;
+}
+.led[data-folded='true'] .led-head {
+  height: 100%;
+  padding: 0;
+  border-bottom: 0;
+}
+.led[data-folded='true'] .led-fold-summary,
+.sys-panel[data-folded='true'] .sys-fold-summary,
+.pg-panel[data-folded='true'] .pg-fold-summary {
+  display: inline-block;
+  margin-left: auto;
+  margin-right: 2px;
+}
+
+.sys-panel[data-folded='true'] .sys-grip,
+.sys-panel[data-folded='true'] .sys-stamp,
+.sys-panel[data-folded='true'] .sys-body,
+.sys-panel[data-folded='true'] .sys-foot,
+.sys-panel[data-folded='true'] .sys-unavailable,
+.sys-panel[data-folded='true'] .sys-sub,
+.sys-panel[data-folded='true'] .sys-meta {
+  display: none !important;
+}
+.sys-panel[data-folded='true'] .sys-head {
+  height: 100%;
+  padding: 0;
+  border-bottom: 0;
+  align-items: center;
+}
+.sys-panel[data-folded='true'] .sys-title {
+  font-size: 15px;
+  letter-spacing: 0.28em;
+}
+
+.pg-panel[data-folded='true'] .pg-grip,
+.pg-panel[data-folded='true'] .pg-stamp,
+.pg-panel[data-folded='true'] .pg-table,
+.pg-panel[data-folded='true'] .pg-empty,
+.pg-panel[data-folded='true'] .pg-sub,
+.pg-panel[data-folded='true'] .pg-meta {
+  display: none !important;
+}
+.pg-panel[data-folded='true'] .pg-head {
+  height: 100%;
+  padding: 0;
+  border-bottom: 0;
+  align-items: center;
+}
+.pg-panel[data-folded='true'] .pg-title {
+  font-size: 15px;
+  letter-spacing: 0.24em;
+}
+
+/* 收起态内容不可点（胶囊本体仍可点按钮） */
+.led[data-folded='true'] .led-body,
+.sys-panel[data-folded='true'] .sys-body,
+.pg-panel[data-folded='true'] .pg-table {
+  pointer-events: none;
+}
+
+/* ── 右侧《器牒》：收起成 28px 竖签 ─────────────────────────── */
+.pd-wrap {
+  transition: width 220ms var(--ease-out);
+  will-change: width;
+}
+.pd-wrap[data-open='false'] {
+  width: 28px;
+}
+.pd-wrap[data-open='false'] .pd-panel {
+  width: 0;
+  opacity: 0;
+  pointer-events: none;
+  border-left: 0;
+  overflow: hidden;
+}
+/* 防御：panel 自身 data-open 也生效（JS 首帧前） */
+.pd-panel[data-open='false'] {
+  width: 0;
+  opacity: 0;
+  pointer-events: none;
+  border-left: 0;
+  overflow: hidden;
+}
+.pd-panel {
+  transition:
+    width 220ms var(--ease-out),
+    opacity 200ms var(--ease-out);
+}
+/* 桌面端竖签：覆盖 process.css 的 display:none */
+.pd-tab {
+  display: flex;
+  pointer-events: auto;
+}
+.pd-tab[hidden] {
+  display: none !important;
+}
+
+/* 收起态的器牒只剩竖签可点，不吃画面拖拽 */
+.pd-wrap[data-open='false'] {
+  pointer-events: none;
+}
+.pd-wrap[data-open='false'] .pd-tab {
+  pointer-events: auto;
+}
+
+/* 收起/展开时器牒外侧页签与面板不得同时可见 */
+.pd-wrap[data-open='true'] .pd-tab {
+  display: none !important;
+}
+
+/* ── 减弱动效：100ms 收放（BIBLE §28.1）────────────────────── */
+.xj-hud[data-reduced='true'] .led,
+.xj-hud[data-reduced='true'] .sys-panel,
+.xj-hud[data-reduced='true'] .pg-panel,
+.xj-hud[data-reduced='true'] .pd-wrap,
+.xj-hud[data-reduced='true'] .pd-panel {
+  transition-duration: 100ms;
+}
+
+/* ── 移动端：收放按钮隐藏，胶囊/竖签规则不生效（沿用抽屉与 sheet）── */
+@media (max-width: 720px) {
+  .panel-fold,
+  .led-fold-summary,
+  .sys-fold-summary,
+  .pg-fold-summary {
+    display: none !important;
+  }
+  .led[data-folded],
+  .sys-panel[data-folded],
+  .pg-panel[data-folded] {
+    width: auto;
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    padding: 0;
+    overflow: visible;
+  }
+  .led[data-folded='true'] .led-grip,
+  .led[data-folded='true'] .led-body,
+  .led[data-folded='true'] .led-offline,
+  .led[data-folded='true'] .led-head-right,
+  .led[data-folded='true'] .led-title-sub,
+  .led[data-folded='true'] .led-vertical,
+  .sys-panel[data-folded='true'] .sys-grip,
+  .sys-panel[data-folded='true'] .sys-stamp,
+  .sys-panel[data-folded='true'] .sys-body,
+  .sys-panel[data-folded='true'] .sys-foot,
+  .sys-panel[data-folded='true'] .sys-unavailable,
+  .sys-panel[data-folded='true'] .sys-sub,
+  .sys-panel[data-folded='true'] .sys-meta,
+  .pg-panel[data-folded='true'] .pg-grip,
+  .pg-panel[data-folded='true'] .pg-stamp,
+  .pg-panel[data-folded='true'] .pg-table,
+  .pg-panel[data-folded='true'] .pg-empty,
+  .pg-panel[data-folded='true'] .pg-sub,
+  .pg-panel[data-folded='true'] .pg-meta {
+    display: revert !important;
+  }
+  .pg-panel[data-folded='true'] .pg-grip,
+  .sys-panel[data-folded='true'] .sys-grip,
+  .led[data-folded='true'] .led-grip {
+    display: flex !important;
+  }
+  .pd-wrap,
+  .pd-wrap[data-open='false'] {
+    width: auto;
+  }
+  .pd-wrap[data-open='false'] .pd-panel {
+    width: 100%;
+    opacity: 1;
+    pointer-events: auto;
+    border-left: 1px solid var(--ink-line);
+  }
+  .pd-tab {
+    display: none !important;
+  }
+}
+
+/* ── 深空主题：收起摘要/按钮用冷色，不继承暖金 ────────────────── */
+:root[data-theme='scifi'] .panel-fold:hover {
+  color: var(--theme-signal);
+  border-color: rgba(121, 242, 208, 0.4);
+  background: rgba(121, 242, 208, 0.06);
+}
+:root[data-theme='scifi'] .panel-fold:focus-visible {
+  outline-color: var(--theme-signal);
+}
+:root[data-theme='scifi'] .panel-fold[aria-expanded='false'] {
+  color: var(--theme-signal);
+}

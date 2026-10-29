@@ -33,6 +33,7 @@ import { createSystemPanel } from './system-panel';
 import { createToasts } from './toast';
 import { createTopbar } from './topbar';
 import { isEditableTarget } from './ui';
+import { isDesktopViewport, loadFold, saveFold, type FoldPanelKey } from './panel-fold';
 
 import '../styles/hud.css';
 import '../styles/ledger.css';
@@ -43,19 +44,20 @@ import '../styles/boot.css';
 import '../styles/view2.css';
 import '../styles/theme.css';
 import '../styles/process.css';
+import '../styles/fold.css';
 
 const MODE_CN = ['壹', '贰', '叁', '肆', '伍', '陆', '柒'];
-const HINT_MOBILE = 'Space 自动运镜 · 滚轮缩放 · 双击复位';
-const HINT_PROCESS_SHORT = '0 切视图 · ↑↓ 择进程 · Esc 清选';
+const HINT_MOBILE = 'Space 自动运镜 · 滚轮缩放 · 双击复位 · [ ] 面板';
+const HINT_PROCESS_SHORT = '0 切视图 · ↑↓ 择进程 · Esc 清选 · [ ] 面板';
 const COLLECTOR = '127.0.0.1:8787';
 
-/** v2.1 视野主权（BIBLE §20.4）：提示行实时反映自动运镜开关。v2.5 百工视图换进程键位。 */
+/** v2.1 视野主权（BIBLE §20.4）：提示行实时反映自动运镜开关。v2.5 百工视图换进程键位。v2.9 加面板收放键。 */
 function hintKeysFor(view: ViewKind, paused: boolean): string {
   const auto = `Space 自动运镜（${paused ? '关' : '开'}）`;
-  if (view === 'processes') return '0 切视图　↑↓ 择进程　Esc 清选　滚轮 缩放　? 快捷键';
+  if (view === 'processes') return '0 切视图　↑↓ 择进程　Esc 清选　[ ] 面板　滚轮 缩放　? 快捷键';
   return view === 'system'
-    ? `0 观星　${auto}　滚轮 对准缩放 · 双击 复位　? 快捷键`
-    : `↑↓ 择星　Enter 勘验　L 起居注　/ 调参　${auto}　滚轮 对准缩放 · 双击 复位　? 快捷键`;
+    ? `0 观星　${auto}　[ ] 面板　滚轮 对准缩放 · 双击 复位　? 快捷键`
+    : `↑↓ 择星　Enter 勘验　L 起居注　[ ] 面板　/ 调参　${auto}　滚轮 对准缩放 · 双击 复位　? 快捷键`;
 }
 
 function emptyToolCounts(): Record<ToolCategory, number> {
@@ -103,6 +105,8 @@ export function createHud(
   let themeFadeTimer = 0;
   // v2.5 百工视图：进程选中态（由 main 的 selectProcess 回执；HUD 只在本地高亮）
   let processSelection: number | null = null;
+  // v2.9 面板收放：桌面端四块常驻面板的本地记忆（移动端 loadFold 恒为全展开）
+  const panelFold = loadFold();
   const tokenSamples: number[] = [];
 
   // ── 图层：顶栏（v2.0 含「智能体 ｜ 整机」视图铭牌，v2.3 含「璇玑 / 深空」主题铭牌）──
@@ -144,10 +148,13 @@ export function createHud(
   // ── 图层：《起居注》 ────────────────────────────────────────
   const ledger = createLedger(container, {
     onSelectSession: (id) => cb.onSelectSession(id),
+    onOpenChange: (open) => setPanelOpen('ledger', open, true),
   });
 
   // ── 图层：《机枢》（整机视图左下，替代起居注）──────────────
-  const systemPanel = createSystemPanel(container);
+  const systemPanel = createSystemPanel(container, {
+    onOpenChange: (open) => setPanelOpen('system', open, true),
+  });
 
   // ── 图层：星牒 ──────────────────────────────────────────────
   const dossier = createDossier(container, {
@@ -181,6 +188,7 @@ export function createHud(
   // ── 图层：《工籍》《器牒》（v2.5 百工视图，替代起居注 / 星牒）──────
   const processList = createProcessList(container, {
     onSelectProcess: (pid) => cb.onSelectProcess?.(pid),
+    onOpenChange: (open) => setPanelOpen('worklist', open, true),
   });
   const processDetail = createProcessDetail(container, {
     onSelectProcess: (pid) => cb.onSelectProcess?.(pid),
@@ -188,6 +196,7 @@ export function createHud(
       processDetail.close();
       refreshPanelState();
     },
+    onOpenChange: (open) => setPanelOpen('procdetail', open, true),
   });
 
   // ── 图层：调参台 ────────────────────────────────────────────
@@ -285,6 +294,52 @@ export function createHud(
     });
   }
 
+  // ── v2.9 面板收放（BIBLE §28）────────────────────────────────
+  // 四块常驻面板的收起态只影响桌面；移动端沿用抽屉/sheet，按钮由 CSS 隐藏。
+  function setPanelOpen(key: FoldPanelKey, open: boolean, persist: boolean): void {
+    panelFold[key] = open ? 'open' : 'closed';
+    if (key === 'ledger') ledger.setFolded(!open);
+    else if (key === 'system') systemPanel.setFolded(!open);
+    else if (key === 'worklist') processList.setFolded(!open);
+    else if (open) processDetail.open();
+    else processDetail.close();
+    if (persist) saveFold(panelFold);
+    refreshPanelState();
+  }
+
+  function toggleLeftPanel(): void {
+    if (view === 'agents') {
+      setPanelOpen('ledger', ledger.isFolded(), true);
+      return;
+    }
+    if (view === 'system') {
+      setPanelOpen('system', systemPanel.isFolded(), true);
+      return;
+    }
+    setPanelOpen('worklist', processList.isFolded(), true);
+  }
+
+  function toggleRightPanel(): void {
+    if (view === 'agents') {
+      // 星牒：展开 = 分野总览（≥1280 首屏也是它），收起 = 藏回竖签
+      if (dossier.isOpen()) {
+        dossier.close();
+        dossier.setSectorFocus(null);
+      } else {
+        dossier.openOverview();
+      }
+      refreshPanelState();
+      return;
+    }
+    if (view === 'system') {
+      if (procPanel.isOpen()) procPanel.close();
+      else procPanel.open();
+      refreshPanelState();
+      return;
+    }
+    setPanelOpen('procdetail', !processDetail.isOpen(), true);
+  }
+
   // ── 视图切换（顶栏铭牌 / 0 键 / ?view=system 共用同一条路径）──
   function requestView(next: ViewKind): void {
     if (next === view) return;
@@ -315,6 +370,11 @@ export function createHud(
       processList.setSystem(system);
       processDetail.setSystem(system);
       processDetail.setSelection(processSelection);
+      // v2.9：百工视图右侧《器牒》按记忆恢复（桌面默认展开，收起时显示竖签）
+      if (isDesktopViewport()) {
+        if (panelFold.procdetail === 'open') processDetail.open();
+        else processDetail.close();
+      }
     }
     refreshTopbar();
     refreshHint();
@@ -541,6 +601,14 @@ export function createHud(
       if (window.matchMedia('(min-width: 1280px)').matches) procPanel.open();
       refreshPanelState();
     }
+    // v2.9：桌面端按记忆恢复四块常驻面板的收放状态（移动端不读取、不写入）
+    if (isDesktopViewport()) {
+      ledger.setFolded(panelFold.ledger === 'closed');
+      systemPanel.setFolded(panelFold.system === 'closed');
+      processList.setFolded(panelFold.worklist === 'closed');
+      if (panelFold.procdetail === 'open') processDetail.open();
+      else processDetail.close();
+    }
   }
 
   // 整机帧断流时也要让顶栏「候采」出现：每秒复查一次时间戳（无数据也更新）
@@ -725,6 +793,15 @@ export function createHud(
           return true;
         }
         cb.onModeRequest('ledger');
+        return true;
+      // v2.9 面板收放（BIBLE §28.4）：[ 收放左下，] 收放右侧
+      case '[':
+        e.preventDefault();
+        toggleLeftPanel();
+        return true;
+      case ']':
+        e.preventDefault();
+        toggleRightPanel();
         return true;
       default:
         return view === 'agents' ? ledger.handleKey(e) : false;

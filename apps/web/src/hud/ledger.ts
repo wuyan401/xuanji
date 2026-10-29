@@ -1,7 +1,7 @@
 // XUANJI · 璇玑 — 《起居注》：一本会自己落墨的史书（DOM 实时账本）
 // 落墨：clip-path 自左向右展开（禁用 opacity+translateY 作主入场）；朱批/钤印 180ms 后盖章。
 // 纪律：单行档案行、无竖线、无斑马纹、不卡片化；上限 120 行；用户上读时不抢滚动。
-import { el } from '../lib/dom';
+import { el, setText } from '../lib/dom';
 import { formatClock, truncate } from '../lib/format';
 import type {
   AstroEvent,
@@ -27,6 +27,8 @@ const STAMP_DELAY = 180;
 
 export interface LedgerCallbacks {
   onSelectSession(id: string): void;
+  /** v2.9 面板收放：true = 展开，false = 收起成胶囊（由 HUD 总装决定是否持久化） */
+  onOpenChange?(open: boolean): void;
 }
 
 export interface LedgerHandle {
@@ -36,6 +38,9 @@ export interface LedgerHandle {
   setConnection(state: ConnectionState): void;
   setSelection(id: string | null): void;
   setReducedMotion(reduced: boolean): void;
+  /** v2.9：桌面端收起 / 展开（true = 收起成 44px 胶囊）；不触发 onOpenChange */
+  setFolded(folded: boolean): void;
+  isFolded(): boolean;
   focus(): void;
   handleKey(e: KeyboardEvent): boolean;
   rowCount(): number;
@@ -70,6 +75,18 @@ export function createLedger(parent: HTMLElement, cb: LedgerCallbacks): LedgerHa
 
   const vertical = makeStamp('起居', true);
   const volText = el('span', { class: 'led-vol', text: '卷〇一' });
+  // v2.9 面板收放：收起成 44px 胶囊（标题 + 共 N 条 + ▸），桌面可见、移动端隐藏
+  const foldSummary = el('span', { class: 'led-fold-summary', text: '共 0 条' });
+  const foldBtn = el('button', {
+    class: 'panel-fold led-fold',
+    attrs: {
+      type: 'button',
+      'data-hud': 'ledger-collapse',
+      'aria-label': '收起《起居注》',
+      'aria-expanded': 'true',
+    },
+  });
+  foldBtn.textContent = '—';
   const head = el('div', { class: 'led-head' }, [
     grip,
     vertical,
@@ -81,6 +98,8 @@ export function createLedger(parent: HTMLElement, cb: LedgerCallbacks): LedgerHa
       el('span', { class: 'led-pulse', attrs: { 'aria-hidden': 'true' } }),
       volText,
     ]),
+    foldSummary,
+    foldBtn,
   ]);
 
   const offlineText = el('span', { class: 'led-offline-text' });
@@ -131,6 +150,8 @@ export function createLedger(parent: HTMLElement, cb: LedgerCallbacks): LedgerHa
   let selectedId: string | null = null;
   let reduced = false;
   let rowCount = 0;
+  /** v2.9：桌面端收成 44px 胶囊（移动端沿用抽屉，不进入该状态） */
+  let folded = false;
 
   const entries: RowEntry[] = [];
   const seen = new Set<string>();
@@ -287,6 +308,7 @@ export function createLedger(parent: HTMLElement, cb: LedgerCallbacks): LedgerHa
     if (count > 0) {
       if (follow && !hoverPause) {
         requestAnimationFrame(() => {
+          if (folded) return;
           scrollToBottom(body);
         });
       } else {
@@ -294,6 +316,7 @@ export function createLedger(parent: HTMLElement, cb: LedgerCallbacks): LedgerHa
       }
     }
     updateEmpty();
+    updateFoldSummary();
   }
 
   function pushDivider(at: number): void {
@@ -580,6 +603,26 @@ export function createLedger(parent: HTMLElement, cb: LedgerCallbacks): LedgerHa
     body.focus({ preventScroll: true });
   }
 
+  // ── v2.9 面板收放（BIBLE §28）：收起成 44px 胶囊，内容不参与点击/读屏 ──
+  function updateFoldSummary(): void {
+    setText(foldSummary, rowCount > 0 ? `共 ${rowCount} 条` : '墨未至');
+  }
+
+  function setFolded(next: boolean): void {
+    folded = next;
+    root.dataset.folded = next ? 'true' : 'false';
+    foldBtn.textContent = next ? '▸' : '—';
+    foldBtn.setAttribute('aria-expanded', next ? 'false' : 'true');
+    foldBtn.setAttribute('aria-label', next ? '展开《起居注》' : '收起《起居注》');
+    body.setAttribute('aria-hidden', next ? 'true' : 'false');
+    if (next && root.dataset.open === 'true') setOpen(false);
+    if (!next) updateEmpty();
+  }
+  foldBtn.addEventListener('click', () => {
+    setFolded(root.dataset.folded !== 'true');
+    cb.onOpenChange?.(!folded);
+  });
+
   function moveActive(delta: number): boolean {
     if (entries.length === 0) return false;
     if (activeIndex < 0) activeIndex = entries.length - 1;
@@ -639,6 +682,8 @@ export function createLedger(parent: HTMLElement, cb: LedgerCallbacks): LedgerHa
     setConnection,
     setSelection,
     setReducedMotion,
+    setFolded,
+    isFolded: () => folded,
     focus,
     handleKey,
     rowCount: () => rowCount,

@@ -10,11 +10,19 @@ const SPARK_POINTS = 60;
 const SPARK_W = 84;
 const SPARK_H = 16;
 
+export interface SystemPanelOptions {
+  /** v2.9 面板收放：true = 展开，false = 收起成 44px 胶囊 */
+  onOpenChange?(open: boolean): void;
+}
+
 export interface SystemPanelHandle {
   root: HTMLElement;
   setSystem(snapshot: SystemSnapshot | null): void;
   setSource(source: SourceKind | null): void;
   setReducedMotion(reduced: boolean): void;
+  /** v2.9：桌面端收起 / 展开（true = 收起成 44px 胶囊）；不触发 onOpenChange */
+  setFolded(folded: boolean): void;
+  isFolded(): boolean;
   dispose(): void;
 }
 
@@ -92,7 +100,7 @@ interface RowRefs {
   sub: HTMLElement;
 }
 
-export function createSystemPanel(parent: HTMLElement): SystemPanelHandle {
+export function createSystemPanel(parent: HTMLElement, opts: SystemPanelOptions = {}): SystemPanelHandle {
   const grip = el('button', {
     class: 'sys-grip',
     attrs: { type: 'button', 'aria-label': '展开《机枢》', 'aria-expanded': 'false' },
@@ -100,6 +108,18 @@ export function createSystemPanel(parent: HTMLElement): SystemPanelHandle {
   grip.append(el('span', { class: 'sys-grip-line', attrs: { 'aria-hidden': 'true' } }));
 
   const meta = el('span', { class: 'sys-meta', text: '候帧……' });
+  // v2.9 面板收放：收起成 44px 胶囊（标题 + CPU/内存摘要 + ▸）
+  const foldSummary = el('span', { class: 'sys-fold-summary', text: '候帧……' });
+  const foldBtn = el('button', {
+    class: 'panel-fold sys-fold',
+    attrs: {
+      type: 'button',
+      'data-hud': 'system-collapse',
+      'aria-label': '收起《机枢》',
+      'aria-expanded': 'true',
+    },
+  });
+  foldBtn.textContent = '—';
   const head = el('header', { class: 'sys-head' }, [
     el('span', { class: 'sys-stamp', text: '机枢', attrs: { 'aria-hidden': 'true' } }),
     el('div', { class: 'sys-head-text' }, [
@@ -107,6 +127,8 @@ export function createSystemPanel(parent: HTMLElement): SystemPanelHandle {
       el('span', { class: 'sys-sub', text: '整机仪象 · 处理器 / 内存 / 显存 / 磁盘 / 网络' }),
     ]),
     meta,
+    foldSummary,
+    foldBtn,
   ]);
 
   const unavailable = el('p', { class: 'sys-unavailable', text: '遥测不可用 · 检查采样器' });
@@ -169,6 +191,8 @@ export function createSystemPanel(parent: HTMLElement): SystemPanelHandle {
   let source: SourceKind | null = null;
   let reduced = false;
   let frames = 0;
+  /** v2.9：桌面端收起成 44px 胶囊 */
+  let folded = false;
 
   function pushSpark(spark: SparkHandle, value: number | null): void {
     if (value != null && Number.isFinite(value)) spark.values.push(value);
@@ -182,6 +206,7 @@ export function createSystemPanel(parent: HTMLElement): SystemPanelHandle {
     body.hidden = true;
     foot.hidden = true;
     setText(meta, source === 'demo' ? '演练 · 演' : '遥测不可用');
+    setText(foldSummary, '遥测不可用');
     grip.setAttribute('aria-label', '展开《机枢》');
   }
 
@@ -275,7 +300,26 @@ export function createSystemPanel(parent: HTMLElement): SystemPanelHandle {
         .join(' · '),
     );
     setText(meta, `采样 2s · 第 ${frames} 帧`);
+    setText(foldSummary, `CPU ${fmtPct(cpuPct)} · 内存 ${fmtPct(memPct)}`);
   }
+
+  // ── v2.9 面板收放（BIBLE §28）：收起成 44px 胶囊，内容不参与点击/读屏 ──
+  function setFolded(next: boolean): void {
+    folded = next;
+    root.dataset.folded = next ? 'true' : 'false';
+    foldBtn.textContent = next ? '▸' : '—';
+    foldBtn.setAttribute('aria-expanded', next ? 'false' : 'true');
+    foldBtn.setAttribute('aria-label', next ? '展开《机枢》' : '收起《机枢》');
+    body.setAttribute('aria-hidden', next ? 'true' : 'false');
+    foot.setAttribute('aria-hidden', next ? 'true' : 'false');
+    if (!next) return;
+    root.dataset.expanded = 'false';
+    grip.setAttribute('aria-expanded', 'false');
+  }
+  foldBtn.addEventListener('click', () => {
+    setFolded(root.dataset.folded !== 'true');
+    opts.onOpenChange?.(!folded);
+  });
 
   grip.addEventListener('click', () => {
     const expanded = root.dataset.expanded === 'true';
@@ -305,6 +349,8 @@ export function createSystemPanel(parent: HTMLElement): SystemPanelHandle {
       reduced = reducedValue;
       root.classList.toggle('is-reduced', reduced);
     },
+    setFolded,
+    isFolded: () => folded,
     dispose(): void {
       root.remove();
     },

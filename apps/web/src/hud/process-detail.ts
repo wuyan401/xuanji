@@ -8,12 +8,15 @@ import type { ProcInfo, SourceKind, SystemSnapshot } from '../state/types';
 import { fmtBytes, fmtPct } from './system-format';
 import { RAIL_LABEL, fmtStartClock, railOf, relAge } from './process-list';
 import { makeCloseButton } from './ui';
+import { isDesktopViewport } from './panel-fold';
 
 export interface ProcessDetailOptions {
   /** 点「← 进程总览」清选；行内点选由《工籍》负责 */
   onSelectProcess?(pid: number | null): void;
-  /** 收起（移动端 sheet 的 ✕） */
+  /** 移动端 sheet 的 ✕ / 关闭请求 */
   onRequestClose?(): void;
+  /** v2.9 面板收放：桌面端 ✕ 真正收起（true = 展开）；移动端不触发 */
+  onOpenChange?(open: boolean): void;
 }
 
 export interface ProcessDetailHandle {
@@ -113,7 +116,18 @@ export function createProcessDetail(parent: HTMLElement, opts: ProcessDetailOpti
 
   const meta = el('span', { class: 'pd-meta', text: '候帧……' });
   const subText = el('span', { class: 'pd-sub', text: '进程总览' });
-  const closeBtn = makeCloseButton('收起器牒', () => opts.onRequestClose?.());
+  const closeBtn = makeCloseButton('收起器牒', () => {
+    // v2.9：桌面端 ✕ = 真正收起（保留选中，显示竖签可再展开）；移动端沿用关闭 sheet
+    if (isDesktopViewport()) {
+      setOpen(false);
+      opts.onOpenChange?.(false);
+      return;
+    }
+    setOpen(false);
+    opts.onRequestClose?.();
+  });
+  closeBtn.setAttribute('data-hud', 'procdetail-collapse');
+  closeBtn.setAttribute('aria-expanded', 'true');
 
   const head = el('header', { class: 'pd-head' }, [
     el('span', { class: 'pd-stamp', text: '器牒', attrs: { 'aria-hidden': 'true' } }),
@@ -347,15 +361,17 @@ export function createProcessDetail(parent: HTMLElement, opts: ProcessDetailOpti
   function setOpen(next: boolean): void {
     open = next;
     root.dataset.open = next ? 'true' : 'false';
+    // v2.9：外层容器同步 open 态，供 fold.css 把整块收窄成 28px 竖签
+    wrap.dataset.open = next ? 'true' : 'false';
     tab.setAttribute('aria-expanded', next ? 'true' : 'false');
     tab.hidden = next;
+    closeBtn.setAttribute('aria-expanded', next ? 'true' : 'false');
     root.classList.toggle('is-open', next);
     root.classList.toggle('is-unrolled', next);
   }
-  tab.addEventListener('click', () => setOpen(true));
-  closeBtn.addEventListener('click', () => {
-    setOpen(false);
-    opts.onRequestClose?.();
+  tab.addEventListener('click', () => {
+    setOpen(true);
+    if (isDesktopViewport()) opts.onOpenChange?.(true);
   });
 
   function setSystem(next: SystemSnapshot | null): void {
