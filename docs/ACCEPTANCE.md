@@ -119,12 +119,13 @@ node -e "fetch('http://127.0.0.1:8787/api/health').then(r=>r.json()).then(h=>con
 
 ```bash
 cd astra
-pnpm -C apps/web exec tsc --noEmit       # 类型 0 错误
-pnpm -C apps/web build                   # 构建 EXIT 0（JS 222.4KB / gzip 75.0；CSS 77.7KB / gzip 14.4）
-pnpm test                                # 后端 15 pass / 0 fail
-pnpm verify:data                         # 数据对账约 1.4 万项 PASS / FAIL 0
+pnpm --dir apps/web run typecheck         # TypeScript 0 错误
+pnpm --dir apps/web run build             # 构建 EXIT 0（本轮：JS 279.19KB / gzip 92.61；CSS 96.54KB / gzip 17.12）
+pnpm test                                # 后端 27 pass / 0 fail
+pnpm verify:data                         # 最终数据对账 16,053 项 PASS / FAIL 0 / WARN 0（数量随本机数据变化）
 pnpm verify:ui                           # 浏览器：live/behavior/demo/motion/perf，console 0 错
-node tools/qa-v29.mjs                    # 18/18：面板收放（起居注/机枢/工籍收起 + 器牒竖签 + 持久化/键盘）
+node tools/qa-v29.mjs                    # 22/22：面板收放 / 持久化 / 键盘 / 有界事件回放 / 隐藏恢复 / 主题与视图
+node tools/test-store.mjs                 # 10/10：结构共享 / full + delta / REST 与 SSE 重连竞态
 node tools/qa-v28.mjs                    # 9/9：显存/GPU 接入 + 星体新鲜度尺寸（须打生产 8787）
 node tools/qa-v27.mjs                    # 15/15：百工奔流/五轨分层/模块芯片/速度与光束随负载/六层核心
 node tools/qa-v26.mjs                    # 18/18：百工瀑布（v2.6 版）/径向层级/内向数据包/无闪烁稳定性
@@ -138,11 +139,13 @@ node tools/qa-v2.mjs                     # 11/11：诸源签/来源筛选/视图
 node tools/shots.mjs                     # 重生成 docs/screenshots/ 的 01–17 应用截图与 32–35 百工截图
 ```
 
+本轮无损性能验证、固定夹具前后数字与限制见 [`PERFORMANCE-2026-11.md`](PERFORMANCE-2026-11.md)。相同基线与测量方式可在本机用 `tools/perf-audit.mjs` 重跑；本地敏感夹具和原始报告位于被 git 忽略的 `docs/qa/`，不会随仓库发布。
+
 报告落在 `docs/qa/<套件>-<时间戳>/report.json`；截图产物在 `docs/screenshots/`（53 张）。
 
-> **口径提醒（如实）**：`qa-v12 / v2 / v21 / v22 / v23 / v24 / qa-check` 里有少数「页面级帧时 / 亮度采样」指标，在本机 headless（软件光栅化 + 390 会话 SSE/HUD 主线程）对机器负载很敏感：
-> 单套顺序跑全绿；同时开几个 headless 套件时会偶发超阈值。硬性能预算以场景自报帧时为准（`scene` 6.13ms/帧，预算 ≤7ms），不是页面级 rAF 秒表。
-> `qa-v24` 请打构建产物（8787 或 preview 8789）：dev 5173 上 main 每秒真实快照会覆盖 QA 合成的 live 状态。
+> **口径提醒（如实）**：页面级 rAF 帧时、场景调用耗时和亮度采样是不同量尺，均按各脚本原阈值判定；不要用其中一项替代另一项，也不保证单套运行必过。提交前真实遥测运行曾出现 `qa-v24` 单点场景 8.8ms（门槛 ≤8ms）及 `qa-check` 14.8fps / p95 133.4ms（门槛 ≥24fps / ≤120ms）的失败，详见性能报告；失败记录保留，不能写成全绿或通过重跑只挑最好值。
+> `qa-v24` 的 `debugStreams().sceneMs` 是最近一帧 wall time，不是平均值；固定夹具对照用于区分持续回归与同机负载波动，不能豁免原门禁。
+> `qa-v24` 请打构建产物（使用 `--url` 指定已启动的生产端口）：dev 5173 上 main 每秒真实快照会覆盖 QA 合成的 live 状态。
 
 ## 6. 已知取舍（验收时不要当成 bug）
 
@@ -164,6 +167,7 @@ node tools/shots.mjs                     # 重生成 docs/screenshots/ 的 01–
 | `docs/DESIGN-BIBLE.md` | 视觉圣经 v2.9（§28 面板收放 · §27 显存/GPU 与星体新鲜度 · §26 百工奔流 · §25 百工瀑布 · §24 机械盘面 · §23 光流/主题 · §20.2 字号） |
 | `docs/ARCHITECTURE.md` | 工程契约（含整机/多源/百工架构） |
 | `docs/DATA-CONTRACT.md` | 数据契约 v2 |
+| `docs/PERFORMANCE-2026-11.md` | 本轮无损性能优化：复现命令、同机测量、收益和限制 |
 | `docs/screenshots/` | 53 张交付截图 + 清单 |
 | `docs/qa/` | 各套件最新验收报告 + 子 agent 自审记录 |
 | `docs/research/01–06` | 五个参考系 + haloflux 的完整研究（机制 vs 皮） |

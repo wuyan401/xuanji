@@ -19,6 +19,7 @@ export interface ProcessListHandle {
   root: HTMLElement;
   /** 整机遥测（只取 procs）；null / 不可用 → 显示「进程遥测不可用」 */
   setSystem(snapshot: SystemSnapshot | null): void;
+  setVisible(visible: boolean): void;
   setSource(source: SourceKind | null): void;
   setSelection(pid: number | null): void;
   /** 当前名册顺序（CPU 降序，最多 24 个 pid）——键盘 ↑↓ 用 */
@@ -169,6 +170,8 @@ export function createProcessList(parent: HTMLElement, opts: ProcessListOptions 
   let expanded = false;
   /** v2.9：桌面端收起成 44px 胶囊 */
   let folded = false;
+  let visible = !document.hidden;
+  let latest: SystemSnapshot | null = null;
 
   function makeRow(pid: number): RowRefs {
     // v2.7：PID 左侧 3px 轨道色小竖标（scene 未就绪时整条隐藏，不画假色）
@@ -236,7 +239,7 @@ export function createProcessList(parent: HTMLElement, opts: ProcessListOptions 
     foldBtn.setAttribute('aria-label', next ? '展开《工籍》' : '收起《工籍》');
     table.setAttribute('aria-hidden', next ? 'true' : 'false');
     empty.setAttribute('aria-hidden', next ? 'true' : 'false');
-    if (!next) return;
+    if (!next) { if (visible) setSystem(latest); return; }
     root.dataset.expanded = 'false';
     grip.setAttribute('aria-expanded', 'false');
   }
@@ -246,6 +249,13 @@ export function createProcessList(parent: HTMLElement, opts: ProcessListOptions 
   });
 
   function setSystem(snapshot: SystemSnapshot | null): void {
+    latest = snapshot;
+    if (!visible) return;
+    const canPaint = !folded && (window.matchMedia('(min-width: 721px)').matches || expanded);
+    if (!canPaint) {
+      setText(foldSummary, snapshot?.available ? `${Math.min(TOP_N, snapshot.procs.length)} 进程` : '候帧');
+      return;
+    }
     const available = !!snapshot && snapshot.available;
     const procs = available ? snapshot?.procs ?? [] : [];
     if (!available || procs.length === 0) {
@@ -318,14 +328,22 @@ export function createProcessList(parent: HTMLElement, opts: ProcessListOptions 
     expanded = next;
     root.dataset.expanded = next ? 'true' : 'false';
     grip.setAttribute('aria-expanded', next ? 'true' : 'false');
+    if (next) setSystem(latest);
   }
   grip.addEventListener('click', () => setExpanded(!expanded));
 
   return {
     root,
     setSystem,
+    setVisible(next: boolean): void {
+      if (visible === next) return;
+      visible = next;
+      if (next) setSystem(latest);
+    },
     setSource(next: SourceKind | null): void {
+      if (source === next) return;
       source = next;
+      if (!visible) return;
       writeMeta();
     },
     setSelection,

@@ -93,6 +93,21 @@ export function loadConfig() {
     tailBytes: num(process.env.EVENT_TAIL_BYTES, 256 * 1024),
     /** zstd tailer: max bytes consumed per file per poll */
     readBudgetPerPoll: num(process.env.EVENT_READ_BUDGET, 4 * 1024 * 1024),
+    /**
+     * zstd tailer: how often the whole `~/.dsh/sessions` tree is re-walked and
+     * every tracked file is stat'ed. Between sweeps only "hot" files (grown
+     * within `eventHotMs`) are stat'ed, which keeps the idle event-log cost
+     * near zero instead of walking ~180 files every 500ms.
+     */
+    eventScanMs: num(process.env.EVENT_SCAN_MS, 5000),
+    /** a file is "hot" (stat'ed on every poll) while it changed within this window */
+    eventHotMs: num(process.env.EVENT_HOT_MS, 10 * 60_000),
+    /**
+     * projcache directory: safety-net full sweeps while fs.watch is active
+     * (fs.watch reports exactly which session files changed, so the full
+     * directory stat only needs to happen occasionally).
+     */
+    projcacheScanMs: num(process.env.PROJCACHE_SCAN_MS, 10_000),
     /** sessions with no event file are still shown; no need to scan deeply */
     workspaceRefreshMs: num(process.env.WORKSPACE_REFRESH_MS, 15_000),
 

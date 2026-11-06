@@ -4,7 +4,7 @@
 > 字段名、单位、可空性之前，必须先改本文件并与前端同步。
 > 对应前端镜像：`apps/web/src/state/types.ts`（字段一一对应）。
 >
-> - 契约版本：**`v2`**（2026-10-27）—— 多源 agent 采集 + 整机遥测
+> - 契约版本：**`v2`**（2026-10-27；2026-11-06 增补兼容的 opt-in delta）—— 多源 agent 采集 + 整机遥测
 > - 服务端：`apps/server/src/server.mjs`（零依赖 Node ≥ 24.12）
 > - 默认地址：`http://127.0.0.1:8787`
 > - 传输：JSON（UTF-8）+ SSE；所有响应 `Cache-Control: no-store`
@@ -31,7 +31,7 @@
 | GET | `/api/events?limit=100` | `{ generatedAt, source, events: AstroEvent[] }` | `limit` 夹在 `1..2000`，默认 100，非法值回退 100 |
 | GET | `/api/system` | `SystemSample` | **整机遥测最新一帧**（CPU/内存/磁盘/网络/进程/uptime/电池） |
 | GET | `/api/system/history?limit=120` | `{ generatedAt, history: SystemSample[] }` | 历史采样环形缓冲；`limit` 夹在 `1..120`，默认 120（**返回对象，不是裸数组**） |
-| GET | `/api/stream` | `text/event-stream` | **SSE**：`fleet` / `tick` / `system` / `: ping`，见 §8 |
+| GET | `/api/stream` | `text/event-stream` | **SSE**：`fleet` / 可选 `delta` / `tick` / `system` / `: ping`，见 §8 |
 | GET | `/api` | 路由表 | 调试用 |
 | GET | `/*` | 静态文件 | 托管 `apps/web/dist`；未构建时返回占位 HTML（200） |
 
@@ -40,6 +40,7 @@
 | 参数 | 适用端点 | 行为 |
 | --- | --- | --- |
 | `?demo=1` | `/api/fleet`、`/api/stream`、`/api/sessions*`、`/api/events` | 返回/推送**模拟数据源**（`source:"demo"`）；live 模式下也会懒启动 demo 源，不影响真实采集 |
+| `?delta=1` | `/api/stream` | 显式启用兼容增量流：首帧/重同步仍为 `fleet`，稳定期每秒为 `delta`；可与 `demo=1` 组合。不带此参数的旧客户端仍每秒收到完整 `fleet`。 |
 | `--demo` / `DEMO=1` | 启动参数 | 服务主数据源直接是 demo（`source:"demo"`） |
 | `--replay <file>` | 启动参数 | 主数据源是回放（`source:"replay"`），`--replay` 优先于 `--demo` |
 
@@ -213,6 +214,18 @@ export interface FleetTickFrame {
   events: AstroEvent[];                // 自上次 tick 以来的新事件（可能为 []）
   sessions?: AgentSession[];           // 仅“有变化”的会话（可省略）
   aggregates?: Aggregates;             // 最新聚合（可省略）
+  sources?: AgentSourceInfo[];         // 最新完整来源注册表（可省略）
+}
+
+/** 仅 opt-in `?delta=1` 的 SSE `event: delta`；不承载事件。 */
+export interface FleetDeltaFrame {
+  type: 'delta';
+  at: number;                         // epoch ms，更新 generatedAt
+  sessions?: AgentSession[];           // 按 id upsert 的完整会话对象，不是局部字段 patch
+  removed?: string[];                  // 从当前会话集合删除的 id
+  aggregates?: Aggregates;             // 若存在，替换完整聚合
+  sectors?: Sector[] | null;           // 兼容预留；当前服务端结构改变会发 full，不发此字段
+  sources?: AgentSourceInfo[] | null;  // 若为数组，替换完整注册表；省略/null 表示保留
 }
 
 /* ------------------------------------------------------------------ 整机遥测 */
@@ -461,7 +474,7 @@ evt-claude-7a4fc49e-…-12                                # Claude Code
 
 ## 8. SSE 协议
 
-`GET /api/stream`（可带 `?demo=1`）。响应头 `Content-Type: text/event-stream`，开场：
+`GET /api/stream`（可带 `?demo=1`、`?delta=1`，也可组合）。响应头 `Content-Type: text/event-stream`，开场：
 
 ```
 retry: 3000
@@ -469,32 +482,39 @@ retry: 3000
 : connected
 ```
 
-之后出现三类消息：
+之后出现以下消息（`delta` 仅在显式启用后出现）：
 
 ```
 event: fleet
 data: {"type":"fleet","generatedAt":1793092743020,"source":"live","sessions":[...],"sectors":[...],"sources":[...],"aggregates":{...},"events":[...]}
 
+event: delta
+data: {"type":"delta","at":1793092744020,"sessions":[仅变更的完整会话对象],"removed":[],"aggregates":{...}}
+
 event: tick
 data: {"type":"tick","at":1793092743020,"events":[{"id":"evt-…",…}],"sessions":[仅变更的会话],"aggregates":{...}}
 
 event: system
-data: {"type":"system","at":1793092740956,"available":true,"cpu":{...},"mem":{...},"disks":[...],"net":{...},"procs":[top12],"uptimeSec":188770,"battery":{"percent":100,"charging":true}}
+data: {"type":"system","at":1793092740956,"available":true,"cpu":{...},"mem":{...},"disks":[...],"net":{...},"procs":[按CPU排序的进程对象],"uptimeSec":188770,"battery":{"percent":100,"charging":true}}
 
 : ping
 ```
 
 | 帧 | 频率 | 说明 |
 | --- | --- | --- |
-| `fleet` | 首帧**立即**发送，之后每 `FLEET_FRAME_MS`（默认 1000ms，≤1fps） | 完整 `FleetSnapshot` + `type:'fleet'`；前端可直接整体替换状态 |
-| `tick` | 每次采集轮询（DSH 500ms / 多源 1000ms 中有新事件时） | 增量：`events`、仅变更的 `sessions`、最新 `aggregates`；无变化时可能不发 |
-| `system` | 每个采样周期（默认 2000ms） | 整机遥测紧凑帧（`procs` top 12）；采样器不可用时不会发送 |
+| `fleet` | 首帧**立即**发送；legacy 之后每 `FLEET_FRAME_MS`（默认 1000ms）；delta 模式在对齐/结构改变/丢帧恢复时发送 | 完整 `FleetSnapshot` + `type:'fleet'`；会话集合以此为权威替换 |
+| `delta` | 仅 `?delta=1`，稳定期每 `FLEET_FRAME_MS` | 按 id upsert `sessions`、删除 `removed`，替换存在的 `aggregates`/`sources`；未出现字段保持原值；事件仍走 tick |
+| `tick` | 每次采集轮询（DSH 500ms / 多源 1000ms 中有新事件时） | 增量：`events`、仅变更的 `sessions`、最新 `aggregates`/`sources`；无变化时可能不发 |
+| `system` | 每个采样周期（默认 2000ms） | 整机遥测帧（`procs` 默认最多 200、配置上限 220，与 REST 同源）；采样器不可用时不会发送 |
 | `: ping` | 每 `HEARTBEAT_MS`（默认 15000ms） | SSE 注释行，用于保活（前端 EventSource 不会触发事件） |
 
-- 多客户端互不影响；每个连接独立计时。
-- 帧的 `data:` 一律单行 JSON。
-- 前端 `EventSource` 断线重连由浏览器负责（`retry: 3000`）。
-- 客户端 32s 未收到任何消息可视为 stale（服务端心跳 + fleet 帧保证不会发生）。
+- 同一数据源的客户端共享每轮 fleet/delta 构建与序列化；背压和重同步状态按连接独立维护。
+- delta 连接先收到即时 full，下一个 hub tick 再用 full 对齐共享基线，随后才接收 delta，避免连接间隙内 X→Y→X 的状态回滚被遗漏。重连也重新执行此流程，不依赖浏览器补发旧增量。
+- 分野 id/source/name/path/liveCount/sessionIds 集合或来源 id/label/state 改变时发送 full；仅来源统计元数据变化时可在 delta 携带完整 `sources` 数组。客户端不能把缺省字段当作空集合。
+- 任一 SSE chunk 因背压或写异常被跳过，delta 连接都会标记需要 full；恢复后先发包含最近事件的 full，再接收增量。每连接的基线时间只在成功写入后更新；过大的缓冲或持续丢帧会断开连接，避免无界积压。
+- 帧的 `data:` 一律单行 JSON；事件按 id 去重，delta 本身不承载事件。
+- 前端 store 以当前 EventSource 的身份门控回调，并在 SSE 恢复后取消/废弃旧 REST fallback 请求，避免旧快照覆盖新 full。
+- 客户端 32s 未收到任何消息可视为 stale；服务端通常通过心跳与 fleet/delta 帧维持活跃，但休眠、断网或背压断连仍须走重连流程。
 
 ---
 

@@ -21,6 +21,7 @@
 // data. A candidate that fails to decode is retried with a larger boundary and
 // finally skipped, so the tailer self-heals.
 
+import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { zstdDecompressSync } from 'node:zlib';
@@ -138,17 +139,31 @@ export class EventLogTailer {
     recentMs = 30 * 60_000,
     tailBytes = 256 * 1024,
     readBudgetPerPoll = 4 * 1024 * 1024,
+    scanMs = 5000,
+    hotMs = 10 * 60_000,
   }) {
     this.root = root;
     this.log = log;
     this.recentMs = recentMs;
     this.tailBytes = tailBytes;
     this.readBudgetPerPoll = readBudgetPerPoll;
+    /** how often the directory tree is re-walked and every file stat'ed */
+    this.scanMs = Math.max(500, scanMs);
+    /** files that changed within this window are stat'ed on every poll */
+    this.hotMs = Math.max(this.scanMs, hotMs);
     /** @type {Map<string,{sessionId:string,pos:number,size:number,mtimeMs:number,stuck:number,stuckAt:number,errorCount:number}>} */
     this.files = new Map();
     this.onEvents = null; // (sessionId, events, meta) => void
     this.stats = { files: 0, preloaded: 0, frames: 0, events: 0, bytes: 0, errors: 0, backlog: 0 };
     this.dirCache = new Map();
+    this.lastSweepAt = 0;
+    // fs.watch lets us notice new / resumed session logs without walking the
+    // whole tree: changed paths are stat'ed on the very next poll. If watching
+    // is unavailable we degrade to the periodic `scanMs` sweep (and log it).
+    this.watcher = null;
+    this.watchQueue = new Set();
+    this.watchDirty = false;
+    this.watchState = process.platform === 'win32' || process.platform === 'darwin' ? 'pending' : 'fallback';
   }
 
   /** List every session.v4.jsonl.zstd file as {file, sessionId, workspaceDir}. */
@@ -223,19 +238,70 @@ export class EventLogTailer {
 
     const ms = performance.now() - t0;
     this.stats = { files: this.files.size, preloaded, frames, events, bytes: 0, errors: 0, backlog: 0 };
+    this.lastSweepAt = now;
+    this.startWatch();
     return { files: this.files.size, preloaded, frames, events, ms };
   }
 
   /**
-   * Incremental poll: stat known files, read + decode only the new bytes.
-   * @returns {Promise<{files:number, frames:number, events:number, bytes:number, ms:number, backlog:number}>}
+   * Watch the session tree (recursive) so a brand-new session log or a resumed
+   * cold one is stat'ed on the next 500ms poll instead of waiting for the next
+   * full sweep. Recursive watching is native on Windows/macOS; elsewhere (and
+   * on any error) we log a visible degradation and keep the sweep fallback.
    */
-  async poll(now = Date.now()) {
-    const t0 = performance.now();
+  startWatch() {
+    if (this.watcher || this.watchState === 'off') return;
+    try {
+      this.watcher = fs.watch(this.root, { recursive: true, persistent: false }, (eventType, filename) => {
+        if (!filename) {
+          this.watchDirty = true;
+          return;
+        }
+        const name = String(filename);
+        if (name.endsWith('.jsonl.zstd')) this.watchQueue.add(path.join(this.root, name));
+        // Directory-level changes (new session dir) need a re-walk.
+        else this.watchDirty = true;
+      });
+      this.watcher.on?.('error', (err) => this.failWatch(err));
+      this.watchState = 'active';
+      this.log?.(`[events] fs.watch active on ${this.root} (new/resumed logs stat'ed every poll)`);
+    } catch (err) {
+      this.failWatch(err);
+    }
+  }
+
+  failWatch(err) {
+    this.watchState = 'fallback';
+    try {
+      this.watcher?.close();
+    } catch {
+      /* already gone */
+    }
+    this.watcher = null;
+    this.log?.(
+      `[events] fs.watch unavailable (${err?.message ?? err}) — degraded to ${this.scanMs}ms directory sweeps; ` +
+      'brand-new session logs may take up to that long to appear',
+    );
+  }
+
+  stopWatch() {
+    this.watchState = 'off';
+    if (!this.watcher) return;
+    try {
+      this.watcher.close();
+    } catch {
+      /* already gone */
+    }
+    this.watcher = null;
+  }
+
+  /**
+   * Full-directory sweep: re-walk the tree, stat every tracked file, pick up
+   * new / removed / truncated files. Expensive, so it runs every `scanMs`.
+   */
+  async sweep(now, candidates) {
     const listed = await this.scan();
     const seen = new Set();
-    const candidates = [];
-
     for (const item of listed) {
       seen.add(item.file);
       let st;
@@ -245,11 +311,11 @@ export class EventLogTailer {
         this.noteError(item.file, err);
         continue;
       }
-      let entry = this.files.get(item.file);
+      const entry = this.files.get(item.file);
       if (!entry) {
         // New session file discovered after boot: start it at the tail so we
         // don't suddenly replay an entire history; unless it is brand new.
-        entry = {
+        const fresh = {
           sessionId: item.sessionId,
           pos: st.size > 64 * 1024 ? st.size : 0,
           size: st.size,
@@ -258,22 +324,117 @@ export class EventLogTailer {
           stuckAt: 0,
           errorCount: 0,
         };
-        this.files.set(item.file, entry);
+        this.files.set(item.file, fresh);
+        if (st.size > 0 && st.size <= 64 * 1024) candidates.push({ file: item.file, entry: fresh, st });
+        continue;
       }
       if (st.size < entry.pos) {
         // File was truncated / rewritten: restart from zero.
         entry.pos = 0;
-        this.log?.(`[events] truncated, rescanning ${item.sessionId}`);
+        this.log?.(`[events] truncated, rescanning ${entry.sessionId}`);
       }
       if (st.size > entry.pos || st.mtimeMs !== entry.mtimeMs) {
         entry.size = st.size;
         entry.mtimeMs = st.mtimeMs;
-        if (st.size >= entry.pos) candidates.push({ item, entry, st });
+        if (st.size >= entry.pos) candidates.push({ file: item.file, entry, st });
       }
     }
     // Drop files that disappeared.
     for (const file of this.files.keys()) {
       if (!seen.has(file)) this.files.delete(file);
+    }
+    this.lastSweepAt = now;
+  }
+
+  /**
+   * Fast path between sweeps: only stat files that changed within `hotMs`.
+   * Cold session logs cannot grow without their mtime updating, so the next
+   * sweep (or an fs.watch notification, see `statWatched`) catches them.
+   */
+  async statHot(now, candidates) {
+    for (const [file, entry] of this.files) {
+      if (now - entry.mtimeMs > this.hotMs) continue;
+      await this.applyStat(file, entry, candidates);
+    }
+  }
+
+  /**
+   * Stat files fs.watch reported as changed since the last poll, including
+   * brand-new logs and cold logs that just got resumed. Runs every poll, so the
+   * discovery latency stays at the 500ms collector cadence.
+   */
+  async statWatched(candidates) {
+    if (this.watchQueue.size === 0) return;
+    const queued = [...this.watchQueue];
+    this.watchQueue.clear();
+    for (const file of queued) {
+      const entry = this.files.get(file);
+      if (entry) {
+        await this.applyStat(file, entry, candidates);
+        continue;
+      }
+      // A session log that appeared between sweeps: start at the tail like the
+      // sweep would, unless it is still tiny (brand-new session -> read all).
+      let st;
+      try {
+        st = await fsp.stat(file);
+      } catch {
+        continue; // vanished again (tmp file / removed session)
+      }
+      const sessionId = path.basename(path.dirname(file));
+      const fresh = {
+        sessionId,
+        pos: st.size > 64 * 1024 ? st.size : 0,
+        size: st.size,
+        mtimeMs: st.mtimeMs,
+        stuck: 0,
+        stuckAt: 0,
+        errorCount: 0,
+      };
+      this.files.set(file, fresh);
+      if (st.size > 0 && st.size <= 64 * 1024) candidates.push({ file, entry: fresh, st });
+    }
+  }
+
+  /** stat one tracked file and add it to the read candidates if it grew. */
+  async applyStat(file, entry, candidates) {
+    let st;
+    try {
+      st = await fsp.stat(file);
+    } catch (err) {
+      this.noteError(file, err);
+      return;
+    }
+    if (st.size < entry.pos) {
+      entry.pos = 0;
+      this.log?.(`[events] truncated, rescanning ${entry.sessionId}`);
+    }
+    if (st.size > entry.pos || st.mtimeMs !== entry.mtimeMs) {
+      entry.size = st.size;
+      entry.mtimeMs = st.mtimeMs;
+      if (st.size >= entry.pos) candidates.push({ file, entry, st });
+    }
+  }
+
+  /**
+   * Incremental poll: stat known files, read + decode only the new bytes.
+   * @returns {Promise<{files:number, frames:number, events:number, bytes:number, ms:number, backlog:number}>}
+   */
+  async poll(now = Date.now()) {
+    const t0 = performance.now();
+    const candidates = [];
+    // A full tree walk + stat-everything is expensive, so it runs only every
+    // `scanMs` (or when fs.watch saw a directory-level change). In between we
+    // stat hot files plus the exact paths fs.watch reported, which keeps new /
+    // resumed session logs at the normal 500ms discovery latency. When the
+    // watcher is active the periodic sweep is just a safety net, so stretch it.
+    const sweepEvery = this.watchState === 'active' ? Math.max(this.scanMs, 15_000) : this.scanMs;
+    if (this.lastSweepAt === 0 || this.watchDirty || now - this.lastSweepAt >= sweepEvery) {
+      this.watchDirty = false;
+      await this.sweep(now, candidates);
+    } else {
+      await this.statHot(now, candidates);
+      await this.statWatched(candidates);
     }
 
     // Read most recently active files first when the budget is tight.
@@ -284,7 +445,7 @@ export class EventLogTailer {
     let events = 0;
     let backlog = 0;
 
-    for (const { item, entry, st } of candidates) {
+    for (const { file, entry, st } of candidates) {
       if (budget <= 0) {
         backlog += Math.max(0, st.size - entry.pos);
         continue;
@@ -293,9 +454,9 @@ export class EventLogTailer {
       if (want <= 0) continue;
       let buf;
       try {
-        buf = await readRange(item.file, entry.pos, want);
+        buf = await readRange(file, entry.pos, want);
       } catch (err) {
-        this.noteError(item.file, err);
+        this.noteError(file, err);
         continue;
       }
       budget -= want;
@@ -363,6 +524,11 @@ export class EventLogTailer {
   cursorSummary() {
     let lagging = 0;
     for (const e of this.files.values()) if (e.pos < e.size) lagging += 1;
-    return { tracked: this.files.size, lagging };
+    return { tracked: this.files.size, lagging, watch: this.watchState };
+  }
+
+  /** Stop the fs.watch handle (server shutdown / tests). */
+  stop() {
+    this.stopWatch();
   }
 }

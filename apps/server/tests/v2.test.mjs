@@ -55,6 +55,7 @@ test('tool names from every agent source map to the five visual categories', () 
   assert.equal(categorizeTool('read'), 'read');
   assert.equal(categorizeTool('write'), 'write');
   assert.equal(categorizeTool('pwsh'), 'exec');
+  assert.equal(categorizeTool('working_directory'), 'exec');
   assert.equal(categorizeTool('web_search'), 'net');
   assert.equal(categorizeTool('spawn_teammate'), 'agent');
   assert.equal(categorizeTool('mcp__rpgmaker-mv__generate_map'), 'write');

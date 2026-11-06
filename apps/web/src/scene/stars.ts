@@ -192,6 +192,7 @@ export class StarSystem {
   private frameAlphaStep = 0;
   private brightnessEstimate = 0;
   private ringRadius = new Map<number, number>();
+  private arcById = new Map<string, SectorArc>();
   /** v2.8 §27.1：最近 200 帧的单帧新鲜度变化（QA debugStarFreshness.maxStepRatio）。 */
   private freshStepLog = new Float32Array(200);
   private freshStepIdx = 0;
@@ -532,6 +533,8 @@ export class StarSystem {
     }
     this.stars = nextStars;
     this.arcs = arcs;
+    this.arcById.clear();
+    for (const arc of arcs) this.arcById.set(arc.id, arc);
     this.relaxOverlap(env);
     this.rebuildConstellation();
     this.initialised = true;
@@ -590,7 +593,7 @@ export class StarSystem {
 
   /** 星的基准期望角（环速 + 分野弧 + 漂移）。 */
   private baseAngleOf(star: StarNode): number {
-    const arc = this.arcs.find((a) => a.id === star.sectorId);
+    const arc = this.arcById.get(star.sectorId);
     const z = clamp(star.zone, 0, this.zoneRot.length - 1);
     const zoneBase = this.zoneRot[z] ?? 0;
     const arcStart = arc ? arc.start : 0;
@@ -693,7 +696,7 @@ export class StarSystem {
         const speed = 0.022 * (0.12 + 0.88 * star.activity) * star.speedK * chaos * energyK;
         star.drift += star.driftDir * speed * dt;
       }
-      const arc = this.arcs.find((a) => a.id === star.sectorId);
+      const arc = this.arcById.get(star.sectorId);
       const span = arc ? arc.span : 0;
       if (span > 0) {
         const dMax = span * (0.96 - star.local);

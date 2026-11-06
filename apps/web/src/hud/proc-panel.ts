@@ -16,6 +16,7 @@ export interface ProcPanelOptions {
 export interface ProcPanelHandle {
   root: HTMLElement;
   setSystem(snapshot: SystemSnapshot | null): void;
+  setVisible(visible: boolean): void;
   setSource(source: SourceKind | null): void;
   setReducedMotion(reduced: boolean): void;
   open(): void;
@@ -85,6 +86,8 @@ export function createProcPanel(parent: HTMLElement, opts: ProcPanelOptions = {}
   let selected: number | null = null;
   let source: SourceKind | null = null;
   let open = false;
+  let visible = !document.hidden;
+  let latest: SystemSnapshot | null = null;
 
   function makeRow(pid: number): RowRefs {
     const pidNode = el('span', { class: 'pr-cell pr-pid', text: String(pid) });
@@ -124,6 +127,8 @@ export function createProcPanel(parent: HTMLElement, opts: ProcPanelOptions = {}
   }
 
   function setSystem(snapshot: SystemSnapshot | null): void {
+    latest = snapshot;
+    if (!visible || !open) return;
     const available = !!snapshot && snapshot.available;
     const procs = available ? snapshot?.procs ?? [] : [];
     if (!available || procs.length === 0) {
@@ -176,12 +181,14 @@ export function createProcPanel(parent: HTMLElement, opts: ProcPanelOptions = {}
 
   function setOpen(next: boolean): void {
     open = next;
+    if (!visible) return;
     root.dataset.open = next ? 'true' : 'false';
     tab.setAttribute('aria-expanded', next ? 'true' : 'false');
     tab.hidden = next;
     if (next) {
       root.classList.add('is-open');
-      requestAnimationFrame(() => root.classList.add('is-unrolled'));
+      setSystem(latest);
+      requestAnimationFrame(() => { if (visible && open) root.classList.add('is-unrolled'); });
     } else {
       root.classList.remove('is-open', 'is-unrolled');
     }
@@ -192,8 +199,15 @@ export function createProcPanel(parent: HTMLElement, opts: ProcPanelOptions = {}
   return {
     root: wrap,
     setSystem,
+    setVisible(next: boolean): void {
+      if (visible === next) return;
+      visible = next;
+      if (next) setOpen(open);
+    },
     setSource(next: SourceKind | null): void {
+      if (source === next) return;
       source = next;
+      if (!visible || !open) return;
       if (!table.hidden) setText(meta, `${order.length} 进程 · Top ${TOP_N} · 2s${source === 'demo' ? ' · 演' : ''}`);
       else if (source === 'demo') setText(meta, '演练 · 演');
     },

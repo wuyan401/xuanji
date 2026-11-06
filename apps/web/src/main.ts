@@ -7,6 +7,7 @@ import './design/tokens.css';
 import './design/themes.css';
 import { FleetStore } from './state/store';
 import type {
+  AstroEvent,
   ClientFleetSnapshot,
   ConnectionState,
   SystemSnapshot,
@@ -109,6 +110,8 @@ function boot(): void {
   // ---- scene / hud 稍后创建；先声明句柄，回调里引用 ----
   let scene: SceneHandle;
   let hud: HudHandle;
+  // HUD 的用户意愿与页面可见性分开记录：后台恢复时不能覆盖 W 壁纸模式。
+  let hudUserVisible = !url.hideHud;
 
   let selectedId: string | null = null;
   /** v2.1 视野主权（BIBLE §20）：默认由参数决定是否自动运镜；默认关。 */
@@ -271,19 +274,33 @@ function boot(): void {
     document.documentElement.dataset.hud = 'off';
     hudRoot.style.display = 'none';
   }
+  hud.setVisible?.(hudUserVisible && !document.hidden);
 
   // ---- 数据接线 ----
+  // 同一帧内的 tick/full/system 合并后只提交一次场景状态；事件本身仍逐条保留。
+  let pendingFleet: ClientFleetSnapshot | null = null;
+  let pendingSystem: SystemSnapshot | null = null;
+  const pendingSceneEvents: AstroEvent[] = [];
+  function flushSceneData(): void {
+    if (pendingFleet) { scene.setFleet(pendingFleet); pendingFleet = null; }
+    if (pendingSystem) { scene.setSystem?.(pendingSystem); pendingSystem = null; }
+    if (pendingSceneEvents.length) {
+      scene.pushEvents(pendingSceneEvents.splice(0));
+    }
+  }
   store.onFleet((snap: ClientFleetSnapshot) => {
-    scene.setFleet(snap);
+    pendingFleet = snap;
     hud.setFleet(snap);
   });
   store.onEvents((events) => {
-    scene.pushEvents(events);
+    pendingSceneEvents.push(...events);
+    // 隐藏期间没有观众，不补放数小时动画；账本与store仍完整保留400条。
+    if (document.hidden && pendingSceneEvents.length > 400) pendingSceneEvents.splice(0, pendingSceneEvents.length - 400);
     hud.pushEvents(events);
   });
   store.onConnection((state: ConnectionState) => hud.setConnection(state));
   store.onSystem((sys: SystemSnapshot) => {
-    scene.setSystem?.(sys);
+    pendingSystem = sys;
     hud.setSystem?.(sys);
   });
 
@@ -315,8 +332,10 @@ function boot(): void {
   // ---- HUD 隐藏（壁纸模式） ----
   function toggleHud(): void {
     const off = document.documentElement.dataset.hud !== 'off';
+    hudUserVisible = !off;
     document.documentElement.dataset.hud = off ? 'off' : 'on';
     hudRoot!.style.display = off ? 'none' : '';
+    hud.setVisible?.(hudUserVisible && !document.hidden);
     if (!off) toast('HUD 已恢复');
   }
 
@@ -401,22 +420,21 @@ function boot(): void {
 
   // ---- 单一 rAF 循环 ----
   let last = performance.now();
-  let lastHiddenFrame = 0;
+  let animationId = 0;
+  let stopped = false;
   let samples: number[] = [];
   let lastSampleAt = 0;
   let reportedStatsAt = 0;
 
   function frame(now: number): void {
-    requestAnimationFrame(frame);
+    animationId = 0;
+    if (document.hidden || stopped) return;
+    animationId = requestAnimationFrame(frame);
     const dt = now - last;
     last = now;
 
-    if (document.hidden) {
-      if (now - lastHiddenFrame < 250) return;
-      lastHiddenFrame = now;
-    }
-
     const frameStart = performance.now();
+    flushSceneData();
     scene.frame(now);
     const frameMs = performance.now() - frameStart;
 
@@ -443,10 +461,37 @@ function boot(): void {
       }
     }
   }
-  requestAnimationFrame(frame);
+  function onVisibilityChange(): void {
+    hud.setVisible?.(hudUserVisible && !document.hidden);
+    if (document.hidden) {
+      if (animationId) cancelAnimationFrame(animationId);
+      animationId = 0;
+      scene.setSuspended?.(true);
+      return;
+    }
+    if (stopped) return;
+    // 恢复只采用最新快照；已过期的瞬时粒子不追赶回放，账本历史并不丢失。
+    const cutoff = Date.now() - 10000;
+    let kept = 0;
+    for (const event of pendingSceneEvents) if (event.at >= cutoff) pendingSceneEvents[kept++] = event;
+    pendingSceneEvents.length = kept;
+    pendingFleet = store.getSnapshot();
+    pendingSystem = store.getSystem();
+    last = performance.now();
+    samples = [];
+    lastSampleAt = reportedStatsAt = last;
+    scene.setSuspended?.(false);
+    if (!animationId) animationId = requestAnimationFrame(frame);
+  }
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  if (document.hidden) scene.setSuspended?.(true);
+  else animationId = requestAnimationFrame(frame);
 
   // ---- 清理 ----
   window.addEventListener('beforeunload', () => {
+    stopped = true;
+    if (animationId) cancelAnimationFrame(animationId);
+    document.removeEventListener('visibilitychange', onVisibilityChange);
     scene.dispose();
     hud.dispose();
     store.dispose();

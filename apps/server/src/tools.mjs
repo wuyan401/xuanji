@@ -100,6 +100,7 @@ export const TOOL_CATEGORY_TABLE = {
   run: 'exec',
   command: 'exec',
   powershell: 'exec',
+  working_directory: 'exec',
   job_kill: 'exec',
   // Hermes exec
   terminal: 'exec',

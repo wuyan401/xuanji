@@ -176,6 +176,17 @@ export interface FleetFrame extends FleetSnapshot {
   type: 'fleet';
 }
 
+/** 可选增量传输：首帧/结构变更仍为完整 fleet，事件独立走 tick。 */
+export interface FleetDeltaFrame {
+  type: 'delta';
+  at: number;
+  sessions?: AgentSession[];
+  removed?: string[];
+  aggregates?: Aggregates;
+  sectors?: Sector[] | null;
+  sources?: AgentSourceInfo[] | null;
+}
+
 /* ------------------------------ 整机仪象 ------------------------------ */
 
 export interface CpuInfo {
@@ -261,7 +272,7 @@ export interface SystemFrame extends SystemSnapshot {
   history?: boolean;
 }
 
-export type SseFrame = FleetFrame | FleetTickFrame | SystemFrame;
+export type SseFrame = FleetFrame | FleetTickFrame | FleetDeltaFrame | SystemFrame;
 
 export const EMPTY_AGGREGATES: Aggregates = {
   liveCount: 0,

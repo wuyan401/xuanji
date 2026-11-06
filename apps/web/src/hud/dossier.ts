@@ -15,14 +15,13 @@ import {
 import { sourceShort, TOOL_CATEGORY_LABEL } from '../state/types';
 import type {
   AgentSession,
-  AgentSourceInfo,
   AstroEvent,
   ClientFleetSnapshot,
   Sector,
   ToolCategory,
 } from '../state/types';
 import { SHIERCI } from './ledger-templates';
-import { makeCloseButton, rafThrottle } from './ui';
+import { makeCloseButton, rafThrottle, setAttrIfChanged } from './ui';
 
 const TOOL_MARKS: Record<ToolCategory, string> = {
   read: '览',
@@ -72,6 +71,8 @@ export interface DossierHandle {
   setSelection(id: string | null): void;
   setSectorFocus(id: string | null): void;
   setSourceFilter(sourceId: string | null): void;
+  /** 文档隐藏或面板收起时只缓存快照，恢复/展开再一次性落墨。 */
+  setVisible(visible: boolean): void;
   setReducedMotion(reduced: boolean): void;
   openOverview(): void;
   close(): void;
@@ -277,12 +278,47 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
   let sourceFilter: string | null = null;
   let errors: AstroEvent[] = [];
   let reduced = false;
+  /** 只有可见且面板展开时才把快照落到 DOM；隐藏时仍保留内存状态。 */
+  let visible = !document.hidden;
   let open = false;
   let runNode: HTMLElement | null = null;
   let runStartedAt = 0;
   let disposed = false;
   let detailSig = '';
   let errorSig = '';
+  let cachedFleet: ClientFleetSnapshot | null = null;
+  const sectorNameCounts = new Map<string, number>();
+  const cachedSectorStats = new Map<string, SectorStats>();
+  const sectorIndexBySession = new Map<string, number>();
+  let multiSource = false;
+  let overviewTotals = { live: 0, idle: 0, ended: 0, pressure: 0, tasks: 0,
+    tools: { read: 0, write: 0, exec: 0, net: 0, agent: 0 } as Record<ToolCategory, number> };
+  const sourceRows = new Map<string, { root: HTMLButtonElement; label: HTMLElement; count: HTMLElement; demo: HTMLElement }>();
+  const top2Sigs = new Map<string, string>();
+
+  function ensureFleetCache(): void {
+    if (cachedFleet === snap) return;
+    cachedFleet = snap;
+    sessionById.clear();
+    sectorNameCounts.clear();
+    cachedSectorStats.clear();
+    sectorIndexBySession.clear();
+    overviewTotals = { live: 0, idle: 0, ended: 0, pressure: 0, tasks: 0,
+      tools: { read: 0, write: 0, exec: 0, net: 0, agent: 0 } };
+    for (const session of snap?.sessions ?? []) {
+      sessionById.set(session.id, session);
+      overviewTotals[session.state === 'live' ? 'live' : session.state === 'idle' ? 'idle' : 'ended'] += 1;
+      overviewTotals.pressure = Math.max(overviewTotals.pressure, session.contextPressure);
+      overviewTotals.tasks += session.team?.tasks ?? 0;
+      for (const cat of TOOL_ORDER) overviewTotals.tools[cat] += session.toolCounts?.[cat] ?? 0;
+    }
+    (snap?.sectors ?? []).forEach((sec, index) => {
+      sectorNameCounts.set(sec.name, (sectorNameCounts.get(sec.name) ?? 0) + 1);
+      for (const id of sec.sessionIds) sectorIndexBySession.set(id, index);
+      cachedSectorStats.set(sec.id, sectorStats(sec));
+    });
+    multiSource = (snap?.sources ?? []).filter((src) => src.state !== 'absent').length > 1;
+  }
 
   const traces = new Map<string, ToolTrace[]>();
   const traceIds = new Set<string>();
@@ -294,7 +330,7 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
     setText(runNode, formatDuration(Date.now() - runStartedAt));
   });
   const runTimer = window.setInterval(() => {
-    if (!open || !runNode) return;
+    if (!visible || !open || !runNode) return;
     tickRun();
   }, 250);
 
@@ -366,8 +402,7 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
 
   /** 同名分野加路径尾缀区分（如 `deepseek harness · AI/`） */
   function sectorLabel(sec: Sector): { name: string; suffix: string } {
-    const sectors = snap?.sectors ?? [];
-    const sameName = sectors.filter((item) => item.name === sec.name).length > 1;
+    const sameName = (sectorNameCounts.get(sec.name) ?? 0) > 1;
     if (!sameName) return { name: sec.name, suffix: '' };
     const segments = (sec.path || '').split(/[\\/]+/).filter(Boolean);
     const tail = segments[segments.length - 1] ?? '';
@@ -376,9 +411,9 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
 
   function createSectorRow(sec: Sector): SectorRowRefs {
     const src = el('span', { class: 'ds-sector-src', attrs: { 'aria-hidden': 'true' } });
-    const name = el('span', { class: 'ds-sector-name', text: sec.name });
+    const name = el('span', { text: sec.name });
     const suffix = el('em', { class: 'ds-sector-suffix', text: '' });
-    name.appendChild(suffix);
+    const nameWrap = el('span', { class: 'ds-sector-name' }, [name, suffix]);
     const recent = el('span', { class: 'ds-sector-recent', text: '—' });
     const counts = el('span', { class: 'ds-sector-counts', text: '—' });
     const rate = el('span', { class: 'ds-sector-rate', text: '' });
@@ -408,7 +443,7 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
         el('span', { class: 'ds-sector-line' }, [
           el('i', { class: 'ds-sector-dot', attrs: { 'aria-hidden': 'true' } }),
           src,
-          name,
+          nameWrap,
           bar,
           recent,
         ]),
@@ -422,12 +457,9 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
     return { root: rootEl, src, name, suffix, recent, counts, rate, top2, bar, cells };
   }
 
-  /** 本机已发现的来源（absent 不参与筛选） */
-  function detectedSources(): AgentSourceInfo[] {
-    return (snap?.sources ?? []).filter((src) => src.state !== 'absent');
-  }
-
   function syncSectors(): void {
+    if (!visible || !open || selection != null) return;
+    ensureFleetCache();
     const sectors = snap?.sectors ?? [];
     const hasData = snap != null;
     const ids = new Set(sectors.map((sec) => sec.id));
@@ -435,6 +467,7 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
       if (!ids.has(id)) {
         refs.root.remove();
         sectorRows.delete(id);
+        top2Sigs.delete(id);
       }
     }
     sectorsEmpty.hidden = sectors.length > 0;
@@ -446,26 +479,26 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
     let liveAll = 0;
     let endedAll = 0;
     let totalAll = 0;
+    let sectorCursor = sectorsBox.firstElementChild;
     for (const sec of sectors) {
       let refs = sectorRows.get(sec.id);
       if (!refs) {
         refs = createSectorRow(sec);
         sectorRows.set(sec.id, refs);
       }
-      sectorsBox.appendChild(refs.root);
+      if (refs.root !== sectorCursor) sectorsBox.insertBefore(refs.root, sectorCursor);
+      sectorCursor = refs.root.nextElementSibling;
 
       const label = sectorLabel(sec);
       setText(refs.name, label.name);
       setText(refs.suffix, label.suffix ? ` · ${label.suffix}` : '');
-      refs.root.dataset.live = 'false';
-      refs.root.dataset.sector = sec.id;
-      refs.root.dataset.source = sec.source;
-      refs.root.setAttribute('aria-pressed', sectorFocus === sec.id ? 'true' : 'false');
+      setAttrIfChanged(refs.root, 'data-sector', sec.id);
+      setAttrIfChanged(refs.root, 'data-source', sec.source);
+      setAttrIfChanged(refs.root, 'aria-pressed', sectorFocus === sec.id ? 'true' : 'false');
       // ≥2 来源时给分野名前缀来源短名（BIBLE §19.1）
-      const multiSource = detectedSources().length > 1;
       setText(refs.src, sourceShort(sec.source));
-      refs.src.hidden = !multiSource;
-      refs.src.dataset.source = sec.source;
+      if (refs.src.hidden === multiSource) refs.src.hidden = !multiSource;
+      setAttrIfChanged(refs.src, 'data-source', sec.source);
       refs.root.classList.toggle('is-dimmed', sourceFilter != null && sec.source !== sourceFilter);
 
       if (!hasData) {
@@ -477,27 +510,31 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
         continue;
       }
 
-      const stats = sectorStats(sec);
+      const stats = cachedSectorStats.get(sec.id)!;
       liveAll += stats.live;
       endedAll += stats.ended;
       totalAll += stats.total;
-      refs.root.dataset.live = stats.live > 0 ? 'true' : 'false';
+      setAttrIfChanged(refs.root, 'data-live', stats.live > 0 ? 'true' : 'false');
 
       setText(refs.recent, relTime(stats.recentAt));
       setText(refs.counts, `行${stats.live} · 藏${stats.ended} · 共${stats.total}`);
       setText(refs.rate, stats.rate > 0 ? `文速 ${formatNumber(Math.round(stats.rate))}` : '文速 —');
 
-      refs.top2.textContent = '';
-      if (stats.top2.length === 0) {
-        refs.top2.appendChild(el('span', { class: 'ds-sector-tool is-none', text: '器用 —' }));
-      } else {
-        for (const item of stats.top2) {
-          refs.top2.appendChild(
-            el('span', { class: 'ds-sector-tool', dataset: { cat: item.cat }, title: TOOL_CATEGORY_LABEL[item.cat] }, [
-              el('i', { class: 'ds-sector-mark', text: TOOL_MARKS[item.cat], attrs: { 'aria-hidden': 'true' } }),
-              el('b', { text: formatCompact(item.count) }),
-            ]),
-          );
+      const top2Sig = stats.top2.map((item) => `${item.cat}:${formatCompact(item.count)}`).join('|');
+      if (top2Sigs.get(sec.id) !== top2Sig) {
+        top2Sigs.set(sec.id, top2Sig);
+        refs.top2.textContent = '';
+        if (stats.top2.length === 0) {
+          refs.top2.appendChild(el('span', { class: 'ds-sector-tool is-none', text: '器用 —' }));
+        } else {
+          for (const item of stats.top2) {
+            refs.top2.appendChild(
+              el('span', { class: 'ds-sector-tool', dataset: { cat: item.cat }, title: TOOL_CATEGORY_LABEL[item.cat] }, [
+                el('i', { class: 'ds-sector-mark', text: TOOL_MARKS[item.cat], attrs: { 'aria-hidden': 'true' } }),
+                el('b', { text: formatCompact(item.count) }),
+              ]),
+            );
+          }
         }
       }
 
@@ -541,7 +578,8 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
     }
     sectorFocus = id;
     syncSectors();
-    if (selection == null) {
+    if (visible && open && selection == null) {
+      ensureFleetCache();
       const focused = snap?.sectors.find((sec) => sec.id === id) ?? null;
       const label = focused ? sectorLabel(focused) : null;
       subText.textContent = label ? `分野 · ${label.name}` : '分野 · 总览';
@@ -551,53 +589,46 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
 
   // ── 诸源渲染（v2.0）─────────────────────────────────────────
   function renderSources(): void {
+    if (!visible || !open || selection != null) return;
     const sources = snap?.sources ?? [];
     const demo = snap?.source === 'demo';
     const hasSources = sources.length > 0;
-    sourcesTitle.hidden = !hasSources;
-    sourcesBox.hidden = !hasSources;
-    sourcesBox.textContent = '';
-    if (!hasSources) return;
-
-    setText(
-      sourcesNote,
-      sourceFilter != null
-        ? `只看 ${sourceShort(sourceFilter)} · 再点取消`
-        : '点签只看来源 · 再点取消',
-    );
-
+    if (sourcesTitle.hidden === hasSources) sourcesTitle.hidden = !hasSources;
+    if (sourcesBox.hidden === hasSources) sourcesBox.hidden = !hasSources;
+    const ids = new Set(sources.map((src) => src.id));
+    for (const [id, refs] of sourceRows) {
+      if (!ids.has(id)) {
+        refs.root.remove();
+        sourceRows.delete(id);
+      }
+    }
+    setText(sourcesNote, sourceFilter != null
+      ? `只看 ${sourceShort(sourceFilter)} · 再点取消` : '点签只看来源 · 再点取消');
+    let cursor = sourcesBox.firstElementChild;
     for (const src of sources) {
       const absent = src.state === 'absent';
-      const kids: (Node | string)[] = [
-        el('span', { class: 'ds-source-label', text: src.label }),
-        absent
-          ? el('span', { class: 'ds-source-count is-absent', text: '未发现' })
-          : el('span', { class: 'ds-source-count', text: String(src.sessions) }),
-      ];
-      if (!absent && demo) kids.push(el('i', { class: 'ds-source-demo', text: '演' }));
-      const chip = el(
-        'button',
-        {
-          class: 'ds-source',
-          attrs: {
-            type: 'button',
-            'data-source': src.id,
-            'data-state': absent ? 'absent' : 'detected',
-            'aria-pressed': sourceFilter === src.id ? 'true' : 'false',
-            title: absent
-              ? `${src.label} · 未发现\n${src.detail}`
-              : `${src.label} · ${src.sessions} 会话 · ${src.live} 在行\n${src.detail}`,
-            'aria-label': absent
-              ? `来源 ${src.label}，未发现`
-              : `来源 ${src.label}，${src.sessions} 会话，${src.live} 在行`,
-          },
-        },
-        kids,
-      );
-      chip.addEventListener('click', () => {
-        setSourceFilter(sourceFilter === src.id ? null : src.id, true);
-      });
-      sourcesBox.appendChild(chip);
+      let refs = sourceRows.get(src.id);
+      if (!refs) {
+        const label = el('span', { class: 'ds-source-label' });
+        const count = el('span', { class: 'ds-source-count' });
+        const demoMark = el('i', { class: 'ds-source-demo', text: '演' });
+        const chip = el('button', { class: 'ds-source', attrs: { type: 'button', 'data-source': src.id } }, [label, count, demoMark]);
+        chip.addEventListener('click', () => setSourceFilter(sourceFilter === src.id ? null : src.id, true));
+        refs = { root: chip, label, count, demo: demoMark };
+        sourceRows.set(src.id, refs);
+      }
+      if (refs.root !== cursor) sourcesBox.insertBefore(refs.root, cursor);
+      cursor = refs.root.nextElementSibling;
+      setText(refs.label, src.label);
+      setText(refs.count, absent ? '未发现' : String(src.sessions));
+      refs.count.classList.toggle('is-absent', absent);
+      if (refs.demo.hidden !== (absent || !demo)) refs.demo.hidden = absent || !demo;
+      setAttrIfChanged(refs.root, 'data-state', absent ? 'absent' : 'detected');
+      setAttrIfChanged(refs.root, 'aria-pressed', sourceFilter === src.id ? 'true' : 'false');
+      setAttrIfChanged(refs.root, 'title', absent ? `${src.label} · 未发现\n${src.detail}`
+        : `${src.label} · ${src.sessions} 会话 · ${src.live} 在行\n${src.detail}`);
+      setAttrIfChanged(refs.root, 'aria-label', absent ? `来源 ${src.label}，未发现`
+        : `来源 ${src.label}，${src.sessions} 会话，${src.live} 在行`);
     }
   }
 
@@ -614,36 +645,27 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
 
   // ── 警情渲染 ────────────────────────────────────────────────
   function renderOverview(): void {
+    if (!visible || !open || selection != null) return;
+    ensureFleetCache();
     const agg = snap?.aggregates;
-    const sessions = snap?.sessions ?? [];
-    const live = agg?.liveCount ?? sessions.filter((s) => s.state === 'live').length;
-    const idle = agg?.idleCount ?? sessions.filter((s) => s.state === 'idle').length;
-    const ended = agg?.endedCount ?? sessions.filter((s) => s.state === 'ended').length;
+    const live = agg?.liveCount ?? overviewTotals.live;
+    const idle = agg?.idleCount ?? overviewTotals.idle;
+    const ended = agg?.endedCount ?? overviewTotals.ended;
     setText(liveValue, snap ? formatNumber(live) : '—');
     setText(idleValue, snap ? formatNumber(idle) : '—');
     setText(endedValue, snap ? formatNumber(ended) : '—');
 
-    const pressure =
-      agg?.maxContextPressure ??
-      sessions.reduce((max, s) => Math.max(max, s.contextPressure), 0);
-    pressureFill.style.width = `${Math.round(Math.max(0, Math.min(1, pressure)) * 100)}%`;
+    const pressure = agg?.maxContextPressure ?? overviewTotals.pressure;
+    const pressureWidth = `${Math.round(Math.max(0, Math.min(1, pressure)) * 100)}%`;
+    if (pressureFill.style.width !== pressureWidth) pressureFill.style.width = pressureWidth;
     setText(pressureValue, snap ? formatCheng(pressure) : '—');
 
-    const teamTasks = sessions.reduce((sum, s) => sum + (s.team?.tasks ?? 0), 0);
-    setText(teamValue, snap ? formatNumber(teamTasks) : '—');
+    setText(teamValue, snap ? formatNumber(overviewTotals.tasks) : '—');
     setText(errCount, snap ? formatNumber(agg?.errorCount ?? errors.length) : '—');
-
-    const totals = new Map<ToolCategory, number>();
-    for (const cat of TOOL_ORDER) totals.set(cat, 0);
-    for (const session of sessions) {
-      for (const cat of TOOL_ORDER) {
-        totals.set(cat, (totals.get(cat) ?? 0) + (session.toolCounts?.[cat] ?? 0));
-      }
-    }
     for (const ref of legendRefs) {
-      const value = totals.get(ref.cat) ?? 0;
-      ref.count.textContent = snap ? formatCompact(value) : '—';
-      ref.item.setAttribute('aria-label', `${TOOL_CATEGORY_LABEL[ref.cat]} ${value}`);
+      const value = overviewTotals.tools[ref.cat];
+      setText(ref.count, snap ? formatCompact(value) : '—');
+      setAttrIfChanged(ref.item, 'aria-label', `${TOOL_CATEGORY_LABEL[ref.cat]} ${value}`);
     }
 
     setText(metaText, snap ? `本机 ${snap.sectors.length} 分野 · ${snap.sessions.length} 位` : '本机 — 分野 · — 位');
@@ -653,6 +675,12 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
   }
 
   function renderErrors(): void {
+    if (!visible) return;
+    if (errBadge) {
+      setText(errBadge, errors.length > 0 ? String(Math.min(errors.length, 9)) : '');
+      if (errBadge.hidden !== (errors.length === 0)) errBadge.hidden = errors.length === 0;
+    }
+    if (!open || selection != null) return;
     const sig = errors.map((ev) => ev.id).join(',');
     if (sig === errorSig) return;
     errorSig = sig;
@@ -711,7 +739,7 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
   }
 
   function detailSignature(session: AgentSession): string {
-    const traceCount = traces.get(session.id)?.length ?? 0;
+    const traceSignature = (traces.get(session.id) ?? []).slice(-RECENT_TOOLS).map((trace) => `${trace.id}:${trace.durationMs}`).join('|');
     return [
       session.id,
       session.state,
@@ -732,12 +760,22 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
       session.lastResponse ?? '',
       session.openStep?.startedAt ?? 0,
       session.openStep?.turn ?? 0,
-      traceCount,
+      traceSignature,
+      session.title,
+      session.workspace,
+      session.cwd,
+      session.model,
+      session.preset,
+      session.reasoningEffort,
+      session.parentId,
+      session.team?.memberIds.join('|'),
     ].join('~');
   }
 
   function renderDetail(force = false): void {
-    const session = selection != null ? snap?.sessions.find((s) => s.id === selection) ?? null : null;
+    if (!visible || !open) return;
+    ensureFleetCache();
+    const session = selection != null ? sessionById.get(selection) ?? null : null;
     if (!session) {
       detail.hidden = true;
       overview.hidden = false;
@@ -753,7 +791,7 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
     detail.hidden = false;
     overview.hidden = true;
 
-    const sectorIndex = snap?.sectors.findIndex((sector) => sector.sessionIds.includes(session.id)) ?? -1;
+    const sectorIndex = sectorIndexBySession.get(session.id) ?? -1;
     const sector = sectorIndex >= 0 ? snap?.sectors[sectorIndex] ?? null : null;
     const label = sector ? sectorLabel(sector) : null;
     const domain = SHIERCI[(sectorIndex >= 0 ? sectorIndex : 0) % SHIERCI.length] ?? SHIERCI[0];
@@ -882,12 +920,23 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
   }
 
   function rerender(): void {
-    renderOverview();
+    if (!visible) return;
+    renderErrors();
+    if (!open) return;
+    ensureFleetCache();
+    if (selection != null && !sessionById.has(selection)) selection = null;
     if (selection != null) renderDetail(false);
+    else {
+      if (overview.hidden) overview.hidden = false;
+      if (!detail.hidden) detail.hidden = true;
+      setText(subText, '分野 · 总览');
+      renderOverview();
+    }
   }
 
   function setOpenState(next: boolean): void {
     open = next;
+    if (!visible) return;
     root.dataset.open = next ? 'true' : 'false';
     tab.setAttribute('aria-expanded', next ? 'true' : 'false');
     if (next) {
@@ -910,13 +959,10 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
       selection = null;
       cb.onSelect(null);
     }
-    overview.hidden = false;
-    detail.hidden = true;
     detailSig = '';
     runNode = null;
     runStartedAt = 0;
-    subText.textContent = '分野 · 总览';
-    renderOverview();
+    rerender();
   }
 
   function close(): void {
@@ -938,9 +984,7 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
   // ── 对外 ────────────────────────────────────────────────────
   function setFleet(next: ClientFleetSnapshot): void {
     snap = next;
-    sessionById = new Map(next.sessions.map((session) => [session.id, session]));
     harvestEvents(next.events);
-    if (selection != null && !sessionById.has(selection)) selection = null;
     rerender();
   }
 
@@ -963,23 +1007,15 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
   }
 
   function setSelection(id: string | null): void {
-    if (selection === id) {
-      if (id != null) renderDetail(true);
-      return;
-    }
+    if (selection === id) return;
     selection = id;
     detailSig = '';
-    if (id != null) {
-      setOpenState(true);
-      renderDetail(true);
-    } else if (open) {
-      overview.hidden = false;
-      detail.hidden = true;
-      subText.textContent = '分野 · 总览';
+    if (id != null) setOpenState(true);
+    else {
       runNode = null;
       runStartedAt = 0;
-      renderOverview();
     }
+    rerender();
   }
 
   function setReducedMotion(value: boolean): void {
@@ -987,14 +1023,17 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
     root.classList.toggle('is-reduced', value);
   }
 
-  // 可见性变化时避免后台 250ms 空转
-  const onVisibility = (): void => {
-    if (document.hidden) {
-      runNode = null;
-      runStartedAt = 0;
+  function setVisible(next: boolean): void {
+    if (visible === next) return;
+    visible = next;
+    if (!next) {
+      tickRun.cancel();
+      return;
     }
-  };
-  document.addEventListener('visibilitychange', onVisibility);
+    setOpenState(open);
+    rerender();
+    if (runNode && runStartedAt) tickRun();
+  }
 
   rerender();
 
@@ -1006,13 +1045,14 @@ export function createDossier(parent: HTMLElement, cb: DossierCallbacks): Dossie
     setSectorFocus: (id: string | null) => setSectorFocus(id, false),
     setSourceFilter: (id: string | null) => setSourceFilter(id, false),
     setReducedMotion,
+    setVisible,
     openOverview,
     close,
     isOpen: () => open,
     dispose(): void {
       disposed = true;
       window.clearInterval(runTimer);
-      document.removeEventListener('visibilitychange', onVisibility);
+      tickRun.cancel();
       void disposed;
       void reduced;
       wrap.remove();

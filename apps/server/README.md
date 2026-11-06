@@ -196,23 +196,22 @@ lastActivityAt 距今 ≤ LIVE_MS(60s)              → live
 | `/api/system` | <1ms（内存中的最新帧） |
 | SSE | fleet 1/s（~568KB/帧）、tick 随采集（仅增量）、system 2s（~2KB）、ping 15s |
 
+## 性能实测（2026-11，无损优化）
+
+同一固定夹具（445 会话 / 38 分野 / 200 进程）下，eventlog/projcache 使用 `fs.watch` 增量队列并保留定期安全扫描；服务端无 SSE 客户端 CPU 从约 19.3% 单核降至 2.3–3.3%。前端默认 `?delta=1` 后，8 秒测试窗口从 legacy full 的 6,170,472 B 降至 85,064 B（约 −98.6%）。旧客户端不带参数仍保持原协议；背压跳帧后先发 full 重新对齐。浏览器和后端测量方法、限制见 [`../../docs/PERFORMANCE-2026-11.md`](../../docs/PERFORMANCE-2026-11.md)。
+
 ## 测试
 
 ```bash
-node --test apps/server/tests/smoke.mjs     # 冒烟：真实 server + REST/SSE 契约（~6s，8 tests）
-node --test apps/server/tests/*.mjs         # 全量：16 tests / ~10.6s
+node --test apps/server/tests/smoke.mjs apps/server/tests/v2.test.mjs apps/server/tests/perf.test.mjs
 ```
 
-- `smoke.mjs`：拉起真实 server（随机端口），覆盖 health（来源注册表 + poll 预算）、
-  `/api/fleet` 契约（28 字段 / 来源前缀 / 不变式 / 事件 source 与排序）、`/api/sessions*` 与 404、
-  `/api/system` 与 `history` 形状与 limit、SSE 的 fleet/tick/system 帧、`?demo=1` 多源演示、工具映射。
-- `v2.test.mjs`：工具映射（四来源工具名 + 关键字兜底）、Hermes tool_calls/tool_result 解析、
-  公共投影契约不变式、整机 sample 假 JSON 行解析、真实 SQLite/JSONL **只读抽样**
-  （断言 `size:mtime` 未变）、Codex absent。
+- `smoke.mjs`：拉起真实 server（随机端口），覆盖 health（来源注册表 + poll 预算）、`/api/fleet` 契约、`/api/sessions*` 与 404、`/api/system` 与 `history`、SSE fleet/tick/system 帧、`?demo=1` 多源演示、工具映射。
+- `v2.test.mjs`：工具映射（含 `working_directory` 命令）、Hermes tool_calls/tool_result 解析、公共投影契约不变式、整机 sample 解析、真实 SQLite/JSONL **只读抽样**（断言 `size:mtime` 未变）、Codex absent。
+- `perf.test.mjs`：多客户端共享序列化、delta 首 full / 增量、背压 full 重同步、demo、eventlog/projcache watcher 续更与安全路径。
+- 最近一次完整结果：27 tests / 27 pass / 0 fail（本次复验；不同机器耗时会变化）。
 
-> ⚠ Node 24.12 的 `node --test <目录>` **不能**展开目录（会把目录当模块加载并报
-> `Cannot find module .../apps/server/tests`）。请用显式文件路径或 glob。
-> 根 `package.json` 的 `test` 脚本已固定为 `node --test apps/server/tests/smoke.mjs`。
+> ⚠ Node 24.12 的 `node --test <目录>` **不能**展开目录。请使用根 `package.json` 的 `pnpm test`，或上面的显式文件列表。受限沙箱若报告 `Error: spawn EPERM`，需在允许子进程的环境重跑相同命令；不要把启动限制误报成断言失败。
 
 ## 已知限制
 

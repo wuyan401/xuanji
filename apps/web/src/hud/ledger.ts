@@ -22,6 +22,7 @@ import {
 import { nearBottom, scrollToBottom } from './ui';
 
 const MAX_ROWS = 120;
+const MAX_PENDING_EVENTS = 400;
 const ANNOUNCE_GAP = 2000;
 const STAMP_DELAY = 180;
 
@@ -35,6 +36,7 @@ export interface LedgerHandle {
   root: HTMLElement;
   setFleet(snap: ClientFleetSnapshot): void;
   pushEvents(events: AstroEvent[]): void;
+  setVisible(visible: boolean): void;
   setConnection(state: ConnectionState): void;
   setSelection(id: string | null): void;
   setReducedMotion(reduced: boolean): void;
@@ -152,6 +154,12 @@ export function createLedger(parent: HTMLElement, cb: LedgerCallbacks): LedgerHa
   let rowCount = 0;
   /** v2.9：桌面端收成 44px 胶囊（移动端沿用抽屉，不进入该状态） */
   let folded = false;
+  let visible = !document.hidden;
+  let latest: ClientFleetSnapshot | null = null;
+  const pendingEvents = new Map<string, AstroEvent>();
+  function canPaint(): boolean {
+    return visible && !folded && (window.matchMedia('(min-width: 721px)').matches || root.dataset.open === 'true');
+  }
 
   const entries: RowEntry[] = [];
   const seen = new Set<string>();
@@ -411,11 +419,23 @@ export function createLedger(parent: HTMLElement, cb: LedgerCallbacks): LedgerHa
     return true;
   }
 
+  function rememberEvent(id: string): void {
+    seen.delete(id);
+    seen.add(id);
+    if (seen.size > 1500) {
+      const trim = seen.size - 1200;
+      let removed = 0;
+      for (const oldest of seen) {
+        seen.delete(oldest);
+        if (++removed >= trim) break;
+      }
+    }
+  }
+
   function ingest(ev: AstroEvent): HTMLElement | null {
     if (!ev || !ev.id || typeof ev.at !== 'number' || Number.isNaN(ev.at)) return null;
     if (seen.has(ev.id)) return null;
-    seen.add(ev.id);
-    if (seen.size > 1500) seen.clear();
+    rememberEvent(ev.id);
 
     const row = buildRow(ev, { ...ctx, now: Date.now() });
     if (!row) return null;
@@ -485,8 +505,9 @@ export function createLedger(parent: HTMLElement, cb: LedgerCallbacks): LedgerHa
     grip.setAttribute('aria-expanded', open ? 'true' : 'false');
     grip.setAttribute('aria-label', open ? '收起《起居注》' : '展开《起居注》');
     if (open) {
+      if (visible) syncVisibleState();
       requestAnimationFrame(() => {
-        if (follow) scrollToBottom(body);
+        if (canPaint() && follow) scrollToBottom(body);
       });
     }
   }
@@ -505,10 +526,17 @@ export function createLedger(parent: HTMLElement, cb: LedgerCallbacks): LedgerHa
 
   // ── 对外 ────────────────────────────────────────────────────
   function setFleet(snap: ClientFleetSnapshot): void {
+    latest = snap;
     ctx.now = Date.now();
     ctx.source = snap.source as SourceKind;
-    root.dataset.source = snap.source ?? 'none';
+    const paint = canPaint();
+    if (paint) root.dataset.source = snap.source ?? 'none';
     const nextMulti = (snap.sources ?? []).filter((src) => src.state !== 'absent').length > 1;
+    multiSource = nextMulti;
+    if (!paint) {
+      if (snap.events?.length) pushEvents(snap.events);
+      return;
+    }
     ctx.sessions.clear();
     for (const session of snap.sessions) ctx.sessions.set(session.id, session);
     ctx.domains.clear();
@@ -516,11 +544,9 @@ export function createLedger(parent: HTMLElement, cb: LedgerCallbacks): LedgerHa
       const domain = SHIERCI[index % SHIERCI.length] ?? SHIERCI[0];
       for (const id of sector.sessionIds) ctx.domains.set(id, domain);
     });
-    // 来源数变化时切换账本行首来源小签的显示模式
-    if (nextMulti !== multiSource) {
-      multiSource = nextMulti;
-      root.dataset.multiSource = nextMulti ? 'true' : 'false';
-    }
+    // Source state may change while hidden; compare against the last painted value.
+    const multiValue = nextMulti ? 'true' : 'false';
+    if (root.dataset.multiSource !== multiValue) root.dataset.multiSource = multiValue;
     // 历史行可能先于快照落墨（pushEvents 早于 setFleet）：每次快照后补齐/收起来源小签
     for (const entry of entries) {
       const tag = entry.node.querySelector<HTMLElement>('.led-src');
@@ -545,14 +571,40 @@ export function createLedger(parent: HTMLElement, cb: LedgerCallbacks): LedgerHa
         entry.node.classList.toggle('is-archived', archived);
       }
     }
-    // 首次拿到快照时把历史事件一并落墨（调用方也会 pushEvents，靠 id 去重）
-    if (snap.events && snap.events.length > 0) pushEvents(snap.events);
+    // Snapshot events also serve as the first visible catch-up after a hidden/folded period.
+    pushEvents(snap.events ?? []);
     if (connection === 'connecting' || connection === 'live') updateEmpty();
   }
 
   function pushEvents(events: AstroEvent[]): void {
-    if (!events || events.length === 0) return;
-    const ordered = [...events].sort((a, b) => a.at - b.at);
+    if ((!events || events.length === 0) && pendingEvents.size === 0) return;
+    if (!canPaint()) {
+      for (const ev of events) {
+        if (!ev?.id || seen.has(ev.id)) continue;
+        pendingEvents.delete(ev.id);
+        pendingEvents.set(ev.id, ev);
+        if (pendingEvents.size > MAX_PENDING_EVENTS) {
+          let oldestId = '';
+          let oldestAt = Number.POSITIVE_INFINITY;
+          for (const [id, pending] of pendingEvents) {
+            if (pending.at < oldestAt) {
+              oldestId = id;
+              oldestAt = pending.at;
+            }
+          }
+          if (oldestId) pendingEvents.delete(oldestId);
+        }
+      }
+      return;
+    }
+    const recent = new Map<string, AstroEvent>();
+    for (const ev of pendingEvents.values()) if (ev?.id && !seen.has(ev.id)) recent.set(ev.id, ev);
+    for (const ev of events.slice(-MAX_PENDING_EVENTS)) {
+      if (ev?.id && !seen.has(ev.id)) recent.set(ev.id, ev);
+    }
+    pendingEvents.clear();
+    const ordered = Array.from(recent.values()).sort((a, b) => a.at - b.at);
+    for (const ev of ordered.slice(0, -MAX_ROWS)) rememberEvent(ev.id);
     let added = 0;
     let batchIndex = 0;
     for (const ev of ordered) {
@@ -566,37 +618,56 @@ export function createLedger(parent: HTMLElement, cb: LedgerCallbacks): LedgerHa
     afterAppend(added);
   }
 
+  function paintConnection(): void {
+    root.dataset.connection = connection;
+    const lost = connection === 'offline' || connection === 'reconnecting';
+    offline.hidden = !lost;
+    if (lost) offlineText.textContent = '与采集器失联，正在重连……';
+    updateEmpty();
+  }
+
   function setConnection(state: ConnectionState): void {
     const prev = connection;
     connection = state;
-    root.dataset.connection = state;
-    const lost = state === 'offline' || state === 'reconnecting';
-    offline.hidden = !lost;
-    if (lost) {
-      lostInk = true;
-      offlineText.textContent =
-        state === 'offline'
-          ? '与采集器失联，正在重连……'
-          : '与采集器失联，正在重连……';
-      updateEmpty();
-    } else if (prev === 'offline' || prev === 'reconnecting') {
-      lostInk = true;
-      updateEmpty();
+    if (!canPaint()) {
+      if (state === 'offline' || state === 'reconnecting' || prev === 'offline' || prev === 'reconnecting') lostInk = true;
+      return;
     }
-    if (state === 'live' || state === 'connecting') updateEmpty();
+    if (state === 'offline' || state === 'reconnecting' || prev === 'offline' || prev === 'reconnecting') lostInk = true;
+    paintConnection();
+  }
+
+  function paintSelection(): void {
+    for (const entry of entries) entry.node.classList.toggle('is-sel', entry.row.sessionId === selectedId);
   }
 
   function setSelection(id: string | null): void {
     if (selectedId === id) return;
     selectedId = id;
-    for (const entry of entries) {
-      entry.node.classList.toggle('is-sel', entry.row.sessionId === id);
-    }
+    if (canPaint()) paintSelection();
   }
 
   function setReducedMotion(value: boolean): void {
     reduced = value;
     root.classList.toggle('is-reduced', value);
+  }
+
+  function syncVisibleState(): void {
+    if (!visible) return;
+    if (latest) setFleet(latest);
+    paintConnection();
+    if (canPaint()) paintSelection();
+    else updateEmpty();
+  }
+
+  function setVisible(next: boolean): void {
+    if (visible === next) return;
+    visible = next;
+    if (next) {
+      // Reconcile cached state once; event history is bounded to the visible window.
+      paintFoldState();
+      syncVisibleState();
+    }
   }
 
   function focus(): void {
@@ -608,15 +679,20 @@ export function createLedger(parent: HTMLElement, cb: LedgerCallbacks): LedgerHa
     setText(foldSummary, rowCount > 0 ? `共 ${rowCount} 条` : '墨未至');
   }
 
+  function paintFoldState(): void {
+    root.dataset.folded = folded ? 'true' : 'false';
+    foldBtn.textContent = folded ? '▸' : '—';
+    foldBtn.setAttribute('aria-expanded', folded ? 'false' : 'true');
+    foldBtn.setAttribute('aria-label', folded ? '展开《起居注》' : '收起《起居注》');
+    body.setAttribute('aria-hidden', folded ? 'true' : 'false');
+    if (folded && root.dataset.open === 'true') setOpen(false);
+  }
+
   function setFolded(next: boolean): void {
     folded = next;
-    root.dataset.folded = next ? 'true' : 'false';
-    foldBtn.textContent = next ? '▸' : '—';
-    foldBtn.setAttribute('aria-expanded', next ? 'false' : 'true');
-    foldBtn.setAttribute('aria-label', next ? '展开《起居注》' : '收起《起居注》');
-    body.setAttribute('aria-hidden', next ? 'true' : 'false');
-    if (next && root.dataset.open === 'true') setOpen(false);
-    if (!next) updateEmpty();
+    if (!visible) return;
+    paintFoldState();
+    if (!next) syncVisibleState();
   }
   foldBtn.addEventListener('click', () => {
     setFolded(root.dataset.folded !== 'true');
@@ -679,6 +755,7 @@ export function createLedger(parent: HTMLElement, cb: LedgerCallbacks): LedgerHa
     root,
     setFleet,
     pushEvents,
+    setVisible,
     setConnection,
     setSelection,
     setReducedMotion,

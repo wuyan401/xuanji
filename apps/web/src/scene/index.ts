@@ -54,6 +54,7 @@ import { CATEGORY_ORDER, GEOM, textScale, textScreenGrow, type BeatView, type En
 
 const MAX_PENDING_EVENTS = 420;
 const STATS_INTERVAL = 500;
+const EMPTY_LIVE_IDS: string[] = [];
 
 // —— v2.1 §20.3 视野记忆（两视图各存一份；刷新后静默恢复，URL 优先）
 const CAMERA_KEY = 'xuanji.camera.v1';
@@ -122,6 +123,8 @@ export function createScene(
   let quality = opts.reducedQuality ? 0.5 : 1;
   let autoPaused = false;
   let disposed = false;
+  /** 后台标签页由 main 停止 rAF；这里保留幂等门，避免恢复前补跑隐藏时长。 */
+  let suspended = false;
 
   // —— v2.0：同一台仪器，三套盘面（v2.5 起加「百工 · 器群」进程视图）
   let currentView: ViewKind =
@@ -157,6 +160,10 @@ export function createScene(
   let themeFade: { canvas: HTMLCanvasElement; start: number; dur: number } | null = null;
 
   let fleet: ClientFleetSnapshot | null = null;
+  let renderedFleet: ClientFleetSnapshot | null = null;
+  let fleetSessionsRef: ClientFleetSnapshot['sessions'] | null = null;
+  let fleetSectorsRef: ClientFleetSnapshot['sectors'] | null = null;
+  let sourceDataRef: ClientFleetSnapshot['sources'] | null = null;
   let selectedId: string | null = null;
   let hoveredId: string | null = null;
   let lastReportedMode: ViewMode | null = null;
@@ -620,6 +627,10 @@ export function createScene(
     }
   }
 
+  function viewIsVisible(kind: ViewKind): boolean {
+    return currentView === kind || viewTrans?.from === kind || viewTrans?.to === kind;
+  }
+
   function handleEvent(event: AstroEvent, now: number): void {
     lastEventAt = now;
     eventTimes.push(now);
@@ -634,8 +645,8 @@ export function createScene(
     const focusId = selectedId ?? camera.autoFocus;
     if (focusId && event.sessionId === focusId) focusTimes.push(now);
     camera.notifyEvent(event.kind, event.sessionId, now);
-    // 整机盘面下不生成观星特效（星层不在画面上），但节拍/统计照常记账
-    if (currentView === 'system') return;
+    // 仅在星野盘面可见时生成观星特效；转场两侧都算可见。
+    if (!viewIsVisible('agents')) return;
     // §18.7 星野：事件触发的单颗流星（内部冷却，不循环）
     if (event.kind === 'session/live' || event.kind === 'turn/start' || event.kind === 'session/ended') {
       sky.spawn(env);
@@ -721,16 +732,26 @@ export function createScene(
   // ———————————————————————————————— 数据接入
 
   function applyFleet(snap: ClientFleetSnapshot): void {
-    const prev = fleet;
+    const prev = renderedFleet;
     fleet = snap;
     env.connection = snap.connection;
-    const now = performance.now();
+    const sourcesChanged = snap.sources !== sourceDataRef;
+    const structuralChange = snap.sessions !== fleetSessionsRef || snap.sectors !== fleetSectorsRef;
+    if (sourcesChanged) sourceCount = snap.sources.filter((x) => x.state === 'detected').length;
+    if (!structuralChange) {
+      // Source/connection timestamps may refresh independently; neither changes star geometry.
+      renderedFleet = snap;
+      sourceDataRef = snap.sources;
+      // Keep the original time-based stream-rate decay cadence without rebuilding star/micro geometry.
+      fx.updateStats(snap, stars.arcs, env);
+      return;
+    }
+
     const prevIds = new Set<string>(prev ? prev.sessions.map((s) => s.id) : []);
     stars.setFleet(snap, env);
-    // §18.4 器数环：数据刷新 + 分野几何变化时重建整圈
+    // These layers depend on the immutable fleet arrays, not generatedAt/receivedAt.
     micro.updateStats(snap, env);
     micro.rebuild(env, stars.arcs, quality);
-    // 新星点火 / 消失熄灭（parent 由 StarSystem 以卫星处理）
     for (const s of snap.sessions) {
       if (prevIds.has(s.id) || s.parentId) continue;
       const star = stars.find(s.id);
@@ -740,7 +761,7 @@ export function createScene(
       const nextIds = new Set(snap.sessions.map((s) => s.id));
       let added = 0;
       for (const s of snap.sessions) {
-        if (nextIds.has(s.id) && !prevIds.has(s.id) && !s.parentId) added += 1;
+        if (!prevIds.has(s.id) && !s.parentId) added += 1;
       }
       if (added > 0) fx.spawns += added;
       for (const s of prev.sessions) {
@@ -749,15 +770,20 @@ export function createScene(
         if (star) effects.spawnExtinguish(star, env);
       }
     }
-    // §22.4：外环数据流密度 ∝ 各分野近实时工具速率
     fx.updateStats(snap, stars.arcs, env);
-    void now;
+    renderedFleet = snap;
+    fleetSessionsRef = snap.sessions;
+    fleetSectorsRef = snap.sectors;
+    sourceDataRef = snap.sources;
   }
 
   // ———————————————————————————————— 每帧
 
   function frame(now: number): void {
-    if (disposed || !mainCtx) return;
+    if (suspended || disposed || !mainCtx) return;
+    const agentsVisible = viewIsVisible('agents');
+    const systemVisible = viewIsVisible('system');
+    const processesVisible = viewIsVisible('processes');
     const drawStart = performance.now();
     const intervalMs = lastFrameNow > 0 ? now - lastFrameNow : 16.7;
     lastFrameNow = now;
@@ -771,7 +797,6 @@ export function createScene(
     env.connection = fleet?.connection ?? 'connecting';
     env.view = currentView;
     env.sourceFilter = sourceFilter;
-    sourceCount = fleet ? (fleet.sources ?? []).filter((x) => x.state === 'detected').length : 0;
     env.sourceCount = sourceCount;
     env.systemAvailable = plate.available;
     env.system = systemSnapshot;
@@ -848,10 +873,10 @@ export function createScene(
     env.grow = easeInOutCubic(grow);
 
     // —— 星与特效
-    stars.update(env, beat.energy);
+    if (agentsVisible) stars.update(env, beat.energy);
     const focusId = selectedId ?? camera.autoFocus;
-    const focusPos = currentView === 'agents' ? stars.focusPos(focusId) : null;
-    camera.update(env, focusPos, currentView === 'agents' ? focusEnergy : 0, stars.liveIds(), now);
+    const focusPos = agentsVisible ? stars.focusPos(focusId) : null;
+    camera.update(env, focusPos, agentsVisible ? focusEnergy : 0, agentsVisible ? stars.liveIds() : EMPTY_LIVE_IDS, now);
     env.zoom = camera.cam.zoom;
     env.mode = camera.mode;
     // v2.3 §22.2：后期权重 1 → 0.55（240ms 指数平滑）取代 v2.2 的 zooming 硬开关——
@@ -898,7 +923,7 @@ export function createScene(
       lastReportedMode = camera.mode;
       cb.onModeChange(camera.mode);
     }
-    effects.update(env);
+    if (agentsVisible) effects.update(env);
 
     // —— 视图刷新（StarSystem 会替换数组引用）
     view.env = env;
@@ -912,18 +937,17 @@ export function createScene(
     view.focusId = camera.autoFocus ?? selectedId;
 
     // —— §18.4/§18.5/§18.7：器数环、气流、流星
-    micro.update(env, view);
-    air.update(env, view);
-    sky.update(env);
-    // —— §19.2：整机遥测 2s 一帧 → 平滑插值（只在整机视图推进；切回时由 applyView 重新对齐）
-    if (currentView === 'system') plate.update(env);
-    // —— v2.5 §24：百工盘面（芯片数据插值 / 严格 1Hz 节拍 / 240ms 线性进出；只在百工视图推进）
-    if (currentView === 'processes') processes.update(env);
-    // —— §22.4 机器运转 / §22.6 复合核心
-    fx.update({ dt, now });
-    core.update(env, view, beat.energy);
-    // —— v2.4 §23.1：工作光流（用本帧最新的星位/仰角实时算路径，不缓存角度）
-    workStreams.update(env, stars, viewBeat, dt, effects, tokenRate, toolRate);
+    if (agentsVisible) {
+      micro.update(env, view);
+      air.update(env, view);
+      sky.update(env);
+      fx.update({ dt, now });
+      core.update(env, view, beat.energy);
+      workStreams.update(env, stars, viewBeat, dt, effects, tokenRate, toolRate);
+    }
+    // Both ends of a transition are rendered, so keep their interpolated state current.
+    if (systemVisible) plate.update(env);
+    if (processesVisible) processes.update(env);
 
     // —————————————————————————— 绘制
     const c = mainCtx;
@@ -1080,7 +1104,7 @@ export function createScene(
     glowTick += 1;
     const glowOn = quality >= 0.42 && params.glow > 0.02;
     const glowHot = !env.zooming || glowTick % 2 === 0;
-    if (glowOn && glowHot && glowCtx && !viewTrans) {
+    if (glowOn && glowHot && glowCtx && !viewTrans && currentView !== 'processes') {
       glowCtx.setTransform(glowScale, 0, 0, glowScale, 0, 0);
       glowCtx.globalCompositeOperation = 'source-over';
       glowCtx.globalAlpha = 1;
@@ -1377,6 +1401,18 @@ export function createScene(
 
   const handle: SceneHandle = {
     frame,
+    setSuspended(next: boolean): void {
+      if (disposed || suspended === next) return;
+      suspended = next;
+      if (!next) {
+        // Reset interval/perf windows so hidden time cannot become a slow-frame downgrade.
+        lastFrameNow = 0;
+        dtSamples.length = 0;
+        drawSamples.length = 0;
+        slowSince = 0;
+        lastStatsAt = 0;
+      }
+    },
     setFleet(snap: ClientFleetSnapshot): void {
       if (disposed) return;
       applyFleet(snap);

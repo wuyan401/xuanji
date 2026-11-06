@@ -2,6 +2,20 @@
 // 只服务于 hud/**，不对外导出。图标一律内联 SVG，不引图标库。
 import { el, svgEl } from '../lib/dom';
 
+/** 只在文案真的变化时落一次 DOM；可见性门禁之外的低风险保险。 */
+export function setTextIfChanged(node: Element | null, text: string): boolean {
+  if (!node || node.textContent === text) return false;
+  node.textContent = text;
+  return true;
+}
+
+/** 只在属性真的变化时落一次 DOM，避免 setAttribute 触发无意义 mutation。 */
+export function setAttrIfChanged(node: Element | null, name: string, value: string): boolean {
+  if (!node || node.getAttribute(name) === value) return false;
+  node.setAttribute(name, value);
+  return true;
+}
+
 export interface Throttled<A extends unknown[]> {
   (...args: A): void;
   cancel(): void;

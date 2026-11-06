@@ -302,7 +302,7 @@ try {
   // ── 6. 移动端不回归 ─────────────────────────────────────────────
   log('\n== mobile ==');
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.goto(`${BASE}/?boot=0`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2800);
   const mobile = await page.evaluate(() => ({
     hscroll: document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -315,6 +315,104 @@ try {
   shots.push(mshot);
   if (mobile.hscroll <= 1 && mobile.hasLedger && mobile.hasList) ok('panels.mobile', mobile);
   else fail('panels.mobile', mobile);
+
+  log('  lifecycle: bounded hidden ledger events and resume state');
+  await page.click('.led-grip');
+  await sleep(420);
+  const hiddenResume = await page.evaluate(() => {
+    const api = window.__astra;
+    api.store.disconnect();
+    const sessionId = api.store.getSessions()[0]?.id || 'qa-session';
+    const stamp = Date.now();
+    api.hud.setConnection('offline');
+    api.hud.setVisible(false);
+    const events = Array.from({ length: 520 }, (_, i) => ({
+      id: `qa-hidden-${stamp}-${i}`, at: stamp + i, kind: 'tool/call', source: 'dsh',
+      sessionId, sessionTitle: 'QA', tool: `probe-${i}`, toolCategory: 'exec',
+      detail: `queued-${i}`, isError: false, turn: 1, step: i, durationMs: null,
+    }));
+    api.hud.pushEvents(events);
+    api.hud.setSelection(sessionId);
+    api.hud.setConnection('offline');
+    api.hud.setConnection('live');
+    api.hud.setVisible(true);
+    const snapshot = { ...api.store.getSnapshot(), events };
+    api.hud.setFleet(snapshot);
+    const rowTexts = () => [...document.querySelectorAll('.led-row')].map((row) => row.textContent || '');
+    const firstPaint = rowTexts();
+    api.hud.setFleet({ ...snapshot, events: [...events] });
+    const repeatedPaint = rowTexts();
+    const alarm = document.querySelector('.alarm');
+    return {
+      rows: repeatedPaint.length,
+      latest: repeatedPaint.at(-1) || '',
+      replayStable: JSON.stringify(firstPaint) === JSON.stringify(repeatedPaint),
+      selected: document.querySelectorAll('.led-row.is-sel').length,
+      connection: document.querySelector('.led')?.dataset.connection,
+      offlineHidden: document.querySelector('.led-offline')?.hidden,
+      alarmHidden: alarm?.hidden,
+    };
+  });
+  const hiddenOk = hiddenResume.rows <= 120 && hiddenResume.rows > 0 &&
+    hiddenResume.latest.includes('queued-519') && hiddenResume.replayStable && hiddenResume.selected > 0 &&
+    hiddenResume.connection === 'live' && hiddenResume.offlineHidden === true && hiddenResume.alarmHidden === true;
+  if (hiddenOk) ok('panels.lifecycle.hidden-resume', hiddenResume);
+  else fail('panels.lifecycle.hidden-resume', hiddenResume);
+
+  const drawer = await page.evaluate(() => {
+    window.__astra.hud.setConnection('offline');
+    const root = document.querySelector('.led');
+    return { open: root?.dataset.open, connection: root?.dataset.connection };
+  });
+  if (drawer.open === 'false') {
+    await page.click('.led-grip');
+    await sleep(420);
+  }
+  const drawerState = await page.evaluate(() => ({
+    open: document.querySelector('.led')?.dataset.open,
+    connection: document.querySelector('.led')?.dataset.connection,
+    offlineHidden: document.querySelector('.led-offline')?.hidden,
+    selected: document.querySelectorAll('.led-row.is-sel').length,
+    latest: [...document.querySelectorAll('.led-row')].at(-1)?.textContent || '',
+  }));
+  const drawerOk = drawerState.open === 'true' && drawerState.connection === 'offline' &&
+    drawerState.offlineHidden === false && drawerState.selected > 0 && drawerState.latest.includes('queued-519');
+  if (drawerOk) ok('panels.lifecycle.mobile-drawer-resume', drawerState);
+  else fail('panels.lifecycle.mobile-drawer-resume', { initial: drawer, state: drawerState });
+
+  const errorAlarm = await page.evaluate(() => {
+    const stamp = Date.now();
+    const sessionId = window.__astra.store.getSessions()[0]?.id || 'qa-session';
+    window.__astra.hud.pushEvents([{
+      id: `qa-error-${stamp}`, at: stamp, kind: 'error', source: 'dsh', sessionId,
+      sessionTitle: 'QA', tool: null, toolCategory: null, detail: 'qa sticky alarm guard',
+      isError: true, turn: 1, step: 1, durationMs: null,
+    }]);
+    window.__astra.hud.setConnection('live');
+    const alarm = document.querySelector('.alarm');
+    return { kind: alarm?.dataset.kind, hidden: alarm?.hidden };
+  });
+  if (errorAlarm.kind === 'error' && errorAlarm.hidden === false) ok('panels.lifecycle.connection-does-not-clear-error-alarm', errorAlarm);
+  else fail('panels.lifecycle.connection-does-not-clear-error-alarm', errorAlarm);
+
+  const deferredHeader = await page.evaluate(() => {
+    const api = window.__astra;
+    api.toggleHud();
+    api.setView('system');
+    api.setThemeById('scifi');
+    api.toggleHud();
+    return {
+      view: document.querySelector('.tb')?.dataset.currentView,
+      viewPressed: document.querySelector('[data-hud="view-tabs"] [data-view="system"]')?.getAttribute('aria-pressed'),
+      subtitle: document.querySelector('.tb-sub')?.textContent,
+      theme: document.querySelector('.tb')?.dataset.theme,
+      themePressed: document.querySelector('[data-hud="theme-tabs"] [data-theme-id="scifi"]')?.getAttribute('aria-pressed'),
+    };
+  });
+  const deferredHeaderOk = deferredHeader.view === 'system' && deferredHeader.viewPressed === 'true' &&
+    deferredHeader.subtitle === '整机仪象' && deferredHeader.theme === 'scifi' && deferredHeader.themePressed === 'true';
+  if (deferredHeaderOk) ok('panels.lifecycle.hidden-view-theme-resume', deferredHeader);
+  else fail('panels.lifecycle.hidden-view-theme-resume', deferredHeader);
   await page.setViewportSize({ width: 1440, height: 900 });
 
   // ── 7. 错误 ─────────────────────────────────────────────────────

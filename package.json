@@ -36,7 +36,7 @@
     "start": "node apps/server/src/server.mjs",
     "start:demo": "node apps/server/src/server.mjs --demo",
     "preview": "pnpm build && node apps/server/src/server.mjs",
-    "test": "node --test apps/server/tests/smoke.mjs apps/server/tests/v2.test.mjs",
+    "test": "node --test apps/server/tests/smoke.mjs apps/server/tests/v2.test.mjs apps/server/tests/perf.test.mjs",
     "typecheck": "pnpm -C apps/web typecheck",
     "verify:data": "node tools/verify-data.mjs",
     "verify:ui": "node tools/qa-check.mjs"

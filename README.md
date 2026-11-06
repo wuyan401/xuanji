@@ -201,15 +201,15 @@ pnpm dev              # 后端 8787 + Vite 5173，浏览器打开 5173
 ```bash
 pnpm typecheck        # tsc --noEmit
 pnpm build            # tsc + vite build
-pnpm test             # 后端测试（smoke + 多来源解析）
-pnpm verify:data      # 数据对账：/api/fleet 逐字段核对原始数据（约 1.4 万项）
+pnpm test             # 后端测试（smoke + 多来源解析 + delta / watch 回归，27 项）
+pnpm verify:data      # 数据对账：/api/fleet 逐字段核对原始数据（约 1.6 万项）
 pnpm verify:ui        # 浏览器验收：连接/键盘/演示/静帧/性能
 ```
 
 还提供了逐版本验收脚本（需本机服务已启动、Chrome/Edge 已安装）：
 
 ```bash
-node tools/qa-v29.mjs    # 面板收放：起居注/机枢/工籍收起 + 器牒竖签 + 持久化/键盘（18 项）
+node tools/qa-v29.mjs    # 面板收放 / 持久化 / 键盘 / 有界回放 / 隐藏与主题恢复（22 项）
 node tools/qa-v28.mjs    # 显存/GPU 接入 + 星体新鲜度尺寸（9 项）
 node tools/qa-v27.mjs    # 百工奔流：五轨分层 / 模块芯片 / 速度与光束随负载 / 六层核心（15 项）
 node tools/qa-v26.mjs    # 百工瀑布（v2.6 版）：径向层级 / 内向数据包 / 无闪烁稳定性（18 项）
@@ -223,8 +223,8 @@ node tools/qa-v2.mjs     # 多来源 / 双视图 / 整机面板（11 项）
 node tools/shots.mjs     # 生成截图（需服务运行）
 ```
 
-版本验收结果见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)（10 分钟目视路线 + 一键命令）。
-当前版本实测：`verify:data` 约 1.4 万项 0 失败；前端打包 JS ≈ 271 KB / gzip 90 KB，CSS ≈ 97 KB / gzip 17.1 KB。
+版本验收结果见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)（目视路线 + 自动化命令）；本轮无损性能实测与限制见 [docs/PERFORMANCE-2026-11.md](docs/PERFORMANCE-2026-11.md)。
+本轮最终数据对账已完成 16,053 项 0 失败（条目数随本机数据变化）；最终前端打包 JS ≈ 279.2 KB / gzip 92.6 KB，CSS ≈ 97 KB / gzip 17.1 KB。
 
 ---
 
@@ -236,6 +236,7 @@ node tools/shots.mjs     # 生成截图（需服务运行）
 | [docs/DESIGN-BIBLE.md](docs/DESIGN-BIBLE.md) | 视觉唯一权威：色板、几何、动效 tokens、反模式、验收清单（含 v2.x 各轮修订） |
 | [docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md) | 前后端数据契约 v2：字段、状态机、SSE、来源注册表、实测样例 |
 | [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) | 验收手册：逐项操作 + 自动化命令 + 已知取舍 |
+| [docs/PERFORMANCE-2026-11.md](docs/PERFORMANCE-2026-11.md) | 无损性能优化：同机固定夹具前后测量、后端采集/传输收益与限制 |
 | [docs/research/](docs/research/) | 设计研究：haloflux 架构拆解 + 5 个参考作品的可迁移机制与禁用皮 |
 
 ---

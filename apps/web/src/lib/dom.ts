@@ -60,9 +60,9 @@ export function svgEl(tag: string, attrs: Record<string, string | number> = {}, 
   return node as SVGElement;
 }
 
-/** 安全设置文本（等价 textContent，语义化） */
+/** 不变文本不写回 DOM，避免移除/重建 Text 节点、触发布局与无障碍树失效。 */
 export function setText(node: Element | null, text: string): void {
-  if (node) node.textContent = text;
+  if (node && node.textContent !== text) node.textContent = text;
 }
 
 /** 清空子节点 */

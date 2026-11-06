@@ -1098,21 +1098,27 @@ export function drawHub(ctx: CanvasRenderingContext2D, view: View, dim: number):
 // ———————————————————————————————————————————— §22.7 scifi 天穹
 
 /** scifi 主题的天穹极细网格（12.8px，alpha .05–.07；屏幕空间；其他主题直接返回）。 */
+let skyGridCache: { key: string; path: Path2D } | null = null;
+
 export function drawSkyGrid(ctx: CanvasRenderingContext2D, env: Env): void {
   if (env.theme !== 'scifi' || env.quality < 0.45) return;
   const step = env.mobile ? 16 : 12.8;
+  const key = `${env.w}:${env.h}:${step}`;
+  if (!skyGridCache || skyGridCache.key !== key) {
+    const path = new Path2D();
+    for (let x = 0; x < env.w; x += step) {
+      path.moveTo(Math.round(x) + 0.5, 0);
+      path.lineTo(Math.round(x) + 0.5, env.h);
+    }
+    for (let y = 0; y < env.h; y += step) {
+      path.moveTo(0, Math.round(y) + 0.5);
+      path.lineTo(env.w, Math.round(y) + 0.5);
+    }
+    skyGridCache = { key, path };
+  }
   ctx.save();
   ctx.strokeStyle = rgba(COLORS.cold300, 0.05 + 0.02 * clamp01(env.fxWeight));
   ctx.lineWidth = 0.5;
-  ctx.beginPath();
-  for (let x = 0; x < env.w; x += step) {
-    ctx.moveTo(Math.round(x) + 0.5, 0);
-    ctx.lineTo(Math.round(x) + 0.5, env.h);
-  }
-  for (let y = 0; y < env.h; y += step) {
-    ctx.moveTo(0, Math.round(y) + 0.5);
-    ctx.lineTo(env.w, Math.round(y) + 0.5);
-  }
-  ctx.stroke();
+  ctx.stroke(skyGridCache.path);
   ctx.restore();
 }

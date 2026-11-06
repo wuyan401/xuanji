@@ -73,8 +73,11 @@ export interface TopbarHandle {
   setView(view: ViewKind): void;
   /** 只同步主题铭牌（main 已切好 data-theme 后回执，HUD 不碰 localStorage） */
   setTheme(theme: ThemeId): void;
+  /** 文档隐藏时仅缓存最新模型，恢复可见时一次同步 DOM。 */
+  setVisible(visible: boolean): void;
   raiseAlarm(kind: AlarmKind, text: string, sticky: boolean): void;
   clearStickyAlarm(): void;
+  clearConnectionAlarm(): void;
   flashError(): void;
   dispose(): void;
 }
@@ -116,6 +119,9 @@ export function createTopbar(container: HTMLElement, opts: TopbarOptions = {}): 
 
   // 视图铭牌：同一台仪器，两套铭牌（智能体 ｜ 整机）。数据视图跟 main 走，点击只发请求。
   let currentView: ViewKind = 'agents';
+  // 文档隐藏时保留最新模型，但暂停时钟/DOM 落笔；恢复时 update 一次。
+  let visible = !document.hidden;
+  let pendingModel: TopbarModel | null = null;
   // 主题铭牌（v2.3）：璇玑 / 深空。同样只发请求，回执由 main → hud.setTheme 回来。
   let currentTheme: ThemeId = 'xuanji';
   const subText = el('span', { class: 'tb-sub', text: '本机智能体观测所' });
@@ -401,6 +407,7 @@ export function createTopbar(container: HTMLElement, opts: TopbarOptions = {}): 
 
   // ── 时钟：每秒更新 ──────────────────────────────────────────
   function tickClock(): void {
+    if (!visible) return;
     const now = new Date();
     setText(shichen, formatShichen(now));
     setText(date, formatDateCN(now));
@@ -457,6 +464,7 @@ export function createTopbar(container: HTMLElement, opts: TopbarOptions = {}): 
   /** 铭牌与副题随视图切换；不改容器与其它模块，只动顶栏自身。 */
   function applyView(view: ViewKind): void {
     currentView = view;
+    if (!visible) return;
     header.dataset.currentView = view;
     tabAgents.setAttribute('aria-pressed', view === 'agents' ? 'true' : 'false');
     tabSystem.setAttribute('aria-pressed', view === 'system' ? 'true' : 'false');
@@ -470,6 +478,7 @@ export function createTopbar(container: HTMLElement, opts: TopbarOptions = {}): 
   /** 只同步主题铭牌；<html data-theme> 与 localStorage 由 main 负责，HUD 只做回执。 */
   function applyTheme(theme: ThemeId): void {
     currentTheme = theme;
+    if (!visible) return;
     header.dataset.theme = theme;
     themeXu.setAttribute('aria-pressed', theme === 'xuanji' ? 'true' : 'false');
     themeScifi.setAttribute('aria-pressed', theme === 'scifi' ? 'true' : 'false');
@@ -491,6 +500,9 @@ export function createTopbar(container: HTMLElement, opts: TopbarOptions = {}): 
   }
 
   function update(model: TopbarModel): void {
+    pendingModel = model;
+    if (!visible) return;
+    pendingModel = null;
     if (model.view !== currentView) applyView(model.view);
     header.dataset.currentView = model.view;
     if (model.theme !== currentTheme) applyTheme(model.theme);
@@ -564,15 +576,43 @@ export function createTopbar(container: HTMLElement, opts: TopbarOptions = {}): 
       : '显存不可用（未检测到 NVIDIA GPU 或 nvidia-smi 不可用）';
   }
 
+  function setVisible(next: boolean): void {
+    if (visible === next) return;
+    visible = next;
+    if (!visible) return;
+    applyView(currentView);
+    applyTheme(currentTheme);
+    tickClock();
+    if (pendingModel) {
+      const model = pendingModel;
+      pendingModel = null;
+      update(model);
+    }
+  }
+
   return {
     root: region,
     seal,
     update,
     setView: applyView,
     setTheme: applyTheme,
+    setVisible,
     raiseAlarm,
     clearStickyAlarm(): void {
       if (!stickyRaised) return;
+      stickyRaised = false;
+      if (collapseTimer) {
+        window.clearTimeout(collapseTimer);
+        collapseTimer = 0;
+      }
+      if (hideTimer) {
+        window.clearTimeout(hideTimer);
+        hideTimer = 0;
+      }
+      hideAlarm();
+    },
+    clearConnectionAlarm(): void {
+      if (!stickyRaised || (alarm.dataset.kind !== 'offline' && alarm.dataset.kind !== 'reconnect')) return;
       stickyRaised = false;
       if (collapseTimer) {
         window.clearTimeout(collapseTimer);

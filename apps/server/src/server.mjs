@@ -157,6 +157,13 @@ class FleetHub {
     // Machine telemetry: live mode gets it from MultiSource; demo/replay get a
     // hub-owned monitor so /api/system still reports the real machine.
     this.systemMonitor = null;
+    // Fleet framing: build + stringify once per tick and share the bytes across
+    // every SSE client (and let REST /api/fleet reuse the same JSON) instead of
+    // re-serialising the ~552KB snapshot per client every second.
+    this.fleetCache = new Map(); // 'live'|'demo' -> { at, json, frame, snapshot }
+    this.deltaState = new Map(); // 'live'|'demo' -> { sessions: Map(id->json), sectorsJson, sourcesJson, at }
+    this.fleetTimer = setInterval(() => this.tickFleet(), Math.max(200, this.config.fleetFrameMs));
+    if (this.fleetTimer.unref) this.fleetTimer.unref();
 
     this.pingTimer = setInterval(() => this.heartbeat(), this.config.heartbeatMs);
     if (this.pingTimer.unref) this.pingTimer.unref();
@@ -296,7 +303,11 @@ class FleetHub {
   }
 
   sendJson(req, res, status, body) {
-    const payload = JSON.stringify(body);
+    this.sendJsonText(req, res, status, JSON.stringify(body));
+  }
+
+  /** Like `sendJson`, but for an already serialised JSON payload. */
+  sendJsonText(req, res, status, payload) {
     res.writeHead(status, {
       'Content-Type': 'application/json; charset=utf-8',
       'Content-Length': Buffer.byteLength(payload),
@@ -391,12 +402,14 @@ class FleetHub {
         this.sendJson(req, res, 405, { error: 'SSE requires GET' });
         return;
       }
-      await this.handleStream(req, res, wantDemo);
+      await this.handleStream(req, res, wantDemo, url.searchParams.get('delta') === '1');
       return;
     }
     if (segments[1] === 'fleet') {
       if (wantDemo) await this.ensureDemo().catch((err) => this.log(`[astra] demo unavailable: ${err?.message ?? err}`));
-      this.sendJson(req, res, 200, this.fleetFor(wantDemo));
+      // REST contract is unchanged: always a full, fresh snapshot. The JSON is
+      // built once here and reused by any SSE frame in the same instant.
+      this.sendJsonText(req, res, 200, this.fleetFrame(wantDemo, 0).json);
       return;
     }
     if (segments[1] === 'sessions') {
@@ -477,9 +490,173 @@ class FleetHub {
     }
   }
 
+  /**
+   * Build (or reuse) one serialised fleet snapshot.
+   *
+   * The snapshot is ~552KB; previously every SSE client built and stringified
+   * its own copy every second and `/api/fleet` stringified it again in
+   * `sendJson`. `maxAgeMs` decides how stale a cached payload may be — 0 for
+   * the hub tick (always fresh, but built once and shared by all clients),
+   * `fleetFrameMs` for a client that just connected / a REST read.
+   *
+   * @returns {{at:number, json:string, frame:string}} `json` is the snapshot
+   *   itself (REST body), `frame` adds the SSE `type:'fleet'` wrapper.
+   */
+  fleetFrame(wantDemo, maxAgeMs) {
+    const key = wantDemo ? 'demo' : 'live';
+    const now = nowMs();
+    const cached = this.fleetCache.get(key);
+    if (cached && now - cached.at <= maxAgeMs) return cached;
+    const fleet = this.fleetFor(wantDemo);
+    const entry = {
+      at: now,
+      json: JSON.stringify(fleet),
+      frame: JSON.stringify({ type: 'fleet', ...fleet }),
+      snapshot: fleet,
+    };
+    this.fleetCache.set(key, entry);
+    return entry;
+  }
+
+  /**
+   * Serialize every session once, keyed by id. Used by both the delta diff and
+   * the baseline seed at first-connect time.
+   */
+  sessionJsonMap(snapshot) {
+    const map = new Map();
+    for (const session of snapshot?.sessions ?? []) map.set(session.id, JSON.stringify(session));
+    return map;
+  }
+
+  /**
+   * Diff the freshly built snapshot against the previous tick.
+   *
+   * Returns changed/added sessions and removed ids. `sources` is the full source
+   * registry array whenever its metadata changed (client source cards must not go
+   * stale: sessions/live/lastActivityAt/detail drift every tick, and shipping the
+   * small array is far cheaper than forcing a full fleet frame). `structureChanged`
+   * is true only for structural edits — sectors (id/source/name/path/liveCount/
+   * sessionIds) or the registry shape (id/label/state) — where a full resync is
+   * required. This is hub state (one baseline per source), deliberately advanced
+   * only by `tickFleet` — never by REST reads or a new client's first frame.
+   */
+  computeDelta(key, entry) {
+    const prev = this.deltaState.get(key);
+    const nowSessions = this.sessionJsonMap(entry.snapshot);
+    const changed = [];
+    for (const session of entry.snapshot?.sessions ?? []) {
+      const old = prev?.sessions.get(session.id);
+      if (old !== nowSessions.get(session.id)) changed.push(session);
+    }
+    const removed = [];
+    if (prev) {
+      for (const id of prev.sessions.keys()) if (!nowSessions.has(id)) removed.push(id);
+    }
+    const sources = entry.snapshot?.sources ?? [];
+    const sourcesSig = JSON.stringify(sources);
+    const sourcesChanged = !prev || prev.sourcesSig !== sourcesSig;
+    const shape = this.structureSignature(entry.snapshot);
+    const structureChanged = !prev || prev.shape.sectors !== shape.sectors || prev.shape.sources !== shape.sources;
+    this.deltaState.set(key, { sessions: nowSessions, shape, sourcesSig, at: entry.at });
+    return { structureChanged, changed, removed, sources: sourcesChanged ? sources : null };
+  }
+
+  /**
+   * Stable "shape" of a snapshot, used to decide delta vs full. Volatile fields
+   * are deliberately excluded from the fast delta path: `sources[].sessions/live/
+   * lastActivityAt/detail` change on every activity tick and sector `sessionIds`
+   * re-sort each second. Sources are instead carried by delta frames themselves
+   * (see `computeDelta`). A sector's `path` and `liveCount` are part of the
+   * signature because a path update or a state transition must be reflected by a
+   * full frame (sectors are not sent in delta frames).
+   */
+  structureSignature(snapshot) {
+    const sectors = (snapshot?.sectors ?? [])
+      .map(
+        (s) =>
+          `${s.id}|${s.source}|${s.name}|${s.path ?? ''}|${s.liveCount}|${(s.sessionIds ?? []).slice().sort().join(',')}`,
+      )
+      .sort();
+    const sources = (snapshot?.sources ?? []).map((s) => `${s.id}|${s.label}|${s.state}`).sort();
+    return { sectors: sectors.join(';'), sources: sources.join(';') };
+  }
+
+  /**
+   * Hub-wide one-second fleet tick. One build + one stringify per source, then
+   * the identical chunk is written to every client of that source. Backpressure
+   * is still enforced per client inside `writeClient`.
+   */
+  tickFleet() {
+    if (this.closed || this.clients.size === 0) return;
+    const groups = new Map(); // 'live'|'demo' -> { wantDemo, clients[] }
+    for (const client of this.clients) {
+      if (client.closed) continue;
+      const key = client.wantDemo ? 'demo' : 'live';
+      let group = groups.get(key);
+      if (!group) {
+        group = { wantDemo: client.wantDemo, clients: [] };
+        groups.set(key, group);
+      }
+      group.clients.push(client);
+    }
+    for (const [key, group] of groups) {
+      let entry;
+      try {
+        entry = this.fleetFrame(group.wantDemo, 0);
+      } catch (err) {
+        this.log(`[astra] fleet frame failed: ${err?.message ?? err}`);
+        continue;
+      }
+      const fullChunk = `event: fleet\ndata: ${entry.frame}\n\n`;
+      let deltaChunk = null;
+      let structureChanged = true;
+      try {
+        const diff = this.computeDelta(key, entry);
+        structureChanged = diff.structureChanged;
+        if (!structureChanged) {
+          const delta = {
+            type: 'delta',
+            at: entry.at,
+            sessions: diff.changed,
+            removed: diff.removed,
+            aggregates: entry.snapshot?.aggregates ?? null,
+          };
+          // Source registry metadata drifts every tick; ship the whole (small)
+          // array whenever it changed so client source cards never go stale.
+          if (diff.sources) delta.sources = diff.sources;
+          deltaChunk = `event: delta\ndata: ${JSON.stringify(delta)}\n\n`;
+        }
+      } catch (err) {
+        this.log(`[astra] delta build failed: ${err?.message ?? err}`);
+        structureChanged = true;
+      }
+      for (const client of group.clients) {
+        if (client.delta) {
+          // A delta client (re)syncs with a full frame whenever it has just
+          // joined, a structure changed, or its previous frame was skipped due
+          // to backpressure. The baseline is only advanced on a successful
+          // write, so a skipped delta can never silently lose changes.
+          if (client.needsFull || structureChanged || !deltaChunk) {
+            if (this.writeClient(client, fullChunk)) {
+              client.needsFull = false;
+              client.baselineAt = entry.at;
+            }
+          } else if (this.writeClient(client, deltaChunk)) {
+            client.baselineAt = entry.at;
+          } else {
+            client.needsFull = true;
+          }
+        } else {
+          this.writeClient(client, fullChunk);
+        }
+        client.lastFleetAt = entry.at;
+      }
+    }
+  }
+
   // -- SSE -------------------------------------------------------------------
 
-  async handleStream(req, res, wantDemo) {
+  async handleStream(req, res, wantDemo, wantDelta = false) {
     if (wantDemo) {
       try {
         await this.ensureDemo();
@@ -502,17 +679,21 @@ class FleetHub {
     const client = {
       res,
       wantDemo,
+      // Opt-in delta protocol (`?delta=1`): first / structure-change frames are
+      // full `event: fleet`, the rest are `event: delta`.
+      delta: wantDelta,
+      needsFull: true,
+      baselineAt: 0,
       closed: false,
-      fleetTimer: null,
       lastFleetAt: 0,
       lastTickAt: 0,
     };
     this.clients.add(client);
 
+    // Immediate first frame (may reuse a snapshot cached < 1s ago; delta
+    // clients always get a freshly built one). Subsequent frames come from the
+    // hub-wide `tickFleet` timer so the JSON is built once for all clients.
     this.sendFleet(client);
-
-    client.fleetTimer = setInterval(() => this.sendFleet(client), this.config.fleetFrameMs);
-    if (client.fleetTimer.unref) client.fleetTimer.unref();
 
     const close = () => this.closeClient(client);
     req.on('close', close);
@@ -544,6 +725,11 @@ class FleetHub {
         this.log(`[sse] dropping stalled client (${Math.round(buffered / 1024)}KB buffered)`);
         this.closeClient(client, true);
       }
+      // Any skipped chunk (fleet / tick / heartbeat) leaves a delta client out of
+      // sync: a follow-up delta cannot replay the skipped tick events, so force a
+      // full fleet frame on the next successful write, which carries sessions,
+      // aggregates and the recent event ring.
+      if (client.delta) client.needsFull = true;
       return false;
     }
     client.dropped = 0;
@@ -551,6 +737,7 @@ class FleetHub {
       client.res.write(chunk);
       return true;
     } catch {
+      if (client.delta) client.needsFull = true;
       return false;
     }
   }
@@ -558,7 +745,6 @@ class FleetHub {
   closeClient(client, destroy = false) {
     if (client.closed) return;
     client.closed = true;
-    if (client.fleetTimer) clearInterval(client.fleetTimer);
     this.clients.delete(client);
     if (destroy) {
       try {
@@ -571,9 +757,30 @@ class FleetHub {
 
   sendFleet(client) {
     if (client.closed) return;
-    const fleet = this.fleetFor(client.wantDemo);
-    client.lastFleetAt = nowMs();
-    this.writeClient(client, `event: fleet\ndata: ${JSON.stringify({ type: 'fleet', ...fleet })}\n\n`);
+    let entry;
+    try {
+      // Delta clients must start from a snapshot at least as new as the delta
+      // baseline, so their first frame is built fresh instead of reusing the
+      // shared (up to 1s old) cache.
+      entry = this.fleetFrame(client.wantDemo, client.delta ? 0 : this.config.fleetFrameMs);
+    } catch (err) {
+      this.log(`[astra] fleet frame failed: ${err?.message ?? err}`);
+      return;
+    }
+    const chunk = `event: fleet\ndata: ${entry.frame}\n\n`;
+    if (this.writeClient(client, chunk)) {
+      client.lastFleetAt = entry.at;
+      client.baselineAt = entry.at;
+      if (client.delta) {
+        // This fresh connect snapshot may be newer than the shared hub baseline.
+        // Force one full frame on the next hub tick so the client is aligned to
+        // the exact baseline from which subsequent deltas are computed; otherwise
+        // a field that changes and reverts between ticks could be lost forever.
+        client.needsFull = true;
+      }
+    } else if (client.delta) {
+      client.needsFull = true;
+    }
   }
 
   broadcast(source, tick) {
@@ -668,11 +875,12 @@ class FleetHub {
   async close() {
     if (this.closed) return;
     this.closed = true;
+    if (this.fleetTimer) clearInterval(this.fleetTimer);
+    this.fleetTimer = null;
     if (this.pingTimer) clearInterval(this.pingTimer);
     this.pingTimer = null;
     for (const client of this.clients) {
       client.closed = true;
-      if (client.fleetTimer) clearInterval(client.fleetTimer);
       try {
         client.res.end();
       } catch {

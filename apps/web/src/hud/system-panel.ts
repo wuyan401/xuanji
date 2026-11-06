@@ -5,6 +5,8 @@
 import { el, setText, svgEl } from '../lib/dom';
 import type { SourceKind, SystemSnapshot } from '../state/types';
 import { fmtBattery, fmtBytes, fmtPct, fmtRate, fmtUptime } from './system-format';
+import { setAttrIfChanged } from './ui';
+import { isDesktopViewport } from './panel-fold';
 const HISTORY_MAX = 120;
 const SPARK_POINTS = 60;
 const SPARK_W = 84;
@@ -18,6 +20,7 @@ export interface SystemPanelOptions {
 export interface SystemPanelHandle {
   root: HTMLElement;
   setSystem(snapshot: SystemSnapshot | null): void;
+  setVisible(visible: boolean): void;
   setSource(source: SourceKind | null): void;
   setReducedMotion(reduced: boolean): void;
   /** v2.9：桌面端收起 / 展开（true = 收起成 44px 胶囊）；不触发 onOpenChange */
@@ -88,11 +91,11 @@ function paintSpark(spark: SparkHandle): void {
     const y = SPARK_H - 2 - ratio * (SPARK_H - 3);
     points.push(`${x.toFixed(1)},${y.toFixed(1)}`);
   });
-  spark.line.setAttribute('points', points.join(' '));
+  setAttrIfChanged(spark.line, 'points', points.join(' '));
   const last = points[points.length - 1]?.split(',') ?? [];
-  spark.dot.setAttribute('cx', last[0] ?? SPARK_W);
-  spark.dot.setAttribute('cy', last[1] ?? SPARK_H - 2);
-  spark.dot.setAttribute('opacity', '1');
+  setAttrIfChanged(spark.dot, 'cx', String(last[0] ?? SPARK_W));
+  setAttrIfChanged(spark.dot, 'cy', String(last[1] ?? SPARK_H - 2));
+  setAttrIfChanged(spark.dot, 'opacity', '1');
 }
 
 interface RowRefs {
@@ -193,12 +196,12 @@ export function createSystemPanel(parent: HTMLElement, opts: SystemPanelOptions 
   let frames = 0;
   /** v2.9：桌面端收起成 44px 胶囊 */
   let folded = false;
+  let visible = !document.hidden;
 
   function pushSpark(spark: SparkHandle, value: number | null): void {
     if (value != null && Number.isFinite(value)) spark.values.push(value);
     else spark.values.push(spark.values.length > 0 ? spark.values[spark.values.length - 1] : 0);
     if (spark.values.length > HISTORY_MAX) spark.values.shift();
-    paintSpark(spark);
   }
 
   function setUnavailable(): void {
@@ -212,14 +215,35 @@ export function createSystemPanel(parent: HTMLElement, opts: SystemPanelOptions 
 
   function setSystem(snapshot: SystemSnapshot | null): void {
     system = snapshot;
+    if (snapshot?.available) {
+      frames += 1;
+      const c = snapshot.disks.find((item) => /^c:/i.test(item.name)) ?? snapshot.disks[0];
+      const d = snapshot.disks.find((item) => /^d:/i.test(item.name)) ?? snapshot.disks[1];
+      pushSpark(cpuRow.spark, Number.isFinite(snapshot.cpu.usage) ? snapshot.cpu.usage : null);
+      pushSpark(memRow.spark, Number.isFinite(snapshot.mem.usedPct) ? snapshot.mem.usedPct : null);
+      pushSpark(diskCRow.spark, c?.usedPct ?? null);
+      pushSpark(diskDRow.spark, d?.usedPct ?? null);
+      pushSpark(rxRow.spark, snapshot.net.rxBps);
+      pushSpark(txRow.spark, snapshot.net.txBps);
+      const gpu = snapshot.gpu;
+      pushSpark(vramRow.spark, gpu && gpu.memTotalBytes > 0 && Number.isFinite(gpu.memPct) ? gpu.memPct : null);
+    }
+    render();
+  }
+
+  function render(): void {
+    if (!visible) return;
+    const snapshot = system;
     if (!snapshot || !snapshot.available) {
       setUnavailable();
       return;
     }
-    frames += 1;
+    setText(foldSummary, `CPU ${fmtPct(snapshot.cpu.usage)} · 内存 ${fmtPct(snapshot.mem.usedPct)}`);
+    if (folded || (!isDesktopViewport() && root.dataset.expanded !== 'true')) return;
     unavailable.hidden = true;
     body.hidden = false;
     foot.hidden = false;
+    for (const row of [cpuRow, memRow, diskCRow, diskDRow, rxRow, txRow, vramRow]) paintSpark(row.spark);
 
     const cpuPct = snapshot.cpu.usage;
     const memPct = snapshot.mem.usedPct;
@@ -234,47 +258,38 @@ export function createSystemPanel(parent: HTMLElement, opts: SystemPanelOptions 
     } else {
       setText(cpuRow.refs.sub, '整机合计');
     }
-    pushSpark(cpuRow.spark, Number.isFinite(cpuPct) ? cpuPct : null);
 
     setText(memRow.refs.value, fmtPct(memPct));
     setText(
       memRow.refs.sub,
       `${fmtBytes(snapshot.mem.usedBytes)} / ${fmtBytes(snapshot.mem.totalBytes)}`,
     );
-    pushSpark(memRow.spark, Number.isFinite(memPct) ? memPct : null);
 
     if (diskC) {
       setText(diskCRow.refs.value, fmtPct(diskC.usedPct));
       setText(diskCRow.refs.sub, `剩 ${fmtBytes(diskC.freeBytes)} / 共 ${fmtBytes(diskC.totalBytes)}`);
-      pushSpark(diskCRow.spark, diskC.usedPct);
     } else {
       setText(diskCRow.refs.value, '—');
       setText(diskCRow.refs.sub, '未报告');
-      pushSpark(diskCRow.spark, null);
     }
     if (diskD) {
       diskDRow.row.hidden = false;
       setText(diskDRow.refs.value, fmtPct(diskD.usedPct));
       setText(diskDRow.refs.sub, `剩 ${fmtBytes(diskD.freeBytes)} / 共 ${fmtBytes(diskD.totalBytes)}`);
-      pushSpark(diskDRow.spark, diskD.usedPct);
     } else {
       diskDRow.row.hidden = true;
-      pushSpark(diskDRow.spark, null);
     }
 
     setText(rxRow.refs.value, fmtRate(snapshot.net.rxBps));
     setText(rxRow.refs.sub, `累计 ${fmtBytes(snapshot.net.totalRxBytes)}`);
-    pushSpark(rxRow.spark, snapshot.net.rxBps);
     setText(txRow.refs.value, fmtRate(snapshot.net.txBps));
     setText(txRow.refs.sub, `累计 ${fmtBytes(snapshot.net.totalTxBytes)}`);
-    pushSpark(txRow.spark, snapshot.net.txBps);
 
     // v2.8：显存 / GPU（null = 显存不可用，不写 0）
     const gpu = snapshot.gpu;
     if (gpu && gpu.memTotalBytes > 0) {
       setText(vramRow.refs.value, fmtPct(gpu.memPct));
       setText(vramRow.refs.sub, `${fmtBytes(gpu.memUsedBytes)} / ${fmtBytes(gpu.memTotalBytes)}`);
-      pushSpark(vramRow.spark, Number.isFinite(gpu.memPct) ? gpu.memPct : null);
       setText(
         gpuRow.refs.value,
         `利用率 ${fmtPct(gpu.utilPct)} · ${Math.round(gpu.tempC)}°C`,
@@ -285,7 +300,6 @@ export function createSystemPanel(parent: HTMLElement, opts: SystemPanelOptions 
     } else {
       setText(vramRow.refs.value, '—');
       setText(vramRow.refs.sub, '显存不可用');
-      pushSpark(vramRow.spark, null);
       setText(gpuRow.refs.value, '—');
       setText(gpuRow.refs.sub, 'GPU 不可用');
       gpuRow.row.title = '未检测到 NVIDIA GPU 或 nvidia-smi 不可用';
@@ -312,7 +326,7 @@ export function createSystemPanel(parent: HTMLElement, opts: SystemPanelOptions 
     foldBtn.setAttribute('aria-label', next ? '展开《机枢》' : '收起《机枢》');
     body.setAttribute('aria-hidden', next ? 'true' : 'false');
     foot.setAttribute('aria-hidden', next ? 'true' : 'false');
-    if (!next) return;
+    if (!next) { render(); return; }
     root.dataset.expanded = 'false';
     grip.setAttribute('aria-expanded', 'false');
   }
@@ -326,13 +340,21 @@ export function createSystemPanel(parent: HTMLElement, opts: SystemPanelOptions 
     root.dataset.expanded = expanded ? 'false' : 'true';
     grip.setAttribute('aria-expanded', expanded ? 'false' : 'true');
     grip.setAttribute('aria-label', expanded ? '展开《机枢》' : '收起《机枢》');
+    if (!expanded) render();
   });
 
   return {
     root,
     setSystem,
+    setVisible(next: boolean): void {
+      if (visible === next) return;
+      visible = next;
+      if (next) render();
+    },
     setSource(next: SourceKind | null): void {
+      if (source === next) return;
       source = next;
+      if (!visible) return;
       if (system && system.available) {
         const battery = fmtBattery(system);
         setText(

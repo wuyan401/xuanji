@@ -37,13 +37,24 @@ export class Collector extends EventEmitter {
     this.config = config;
     this.log = log;
 
-    this.projcache = new ProjCache({ dir: config.projcacheDir, log });
+    this.projcache = new ProjCache({
+      dir: config.projcacheDir,
+      log,
+      // fs.watch reports the few session files DSH rewrote, so the full
+      // directory stat sweep only needs to be a periodic safety net.
+      scanMs: config.projcacheScanMs,
+    });
     this.eventlog = new EventLogTailer({
       root: config.eventsRoot,
       log,
       recentMs: config.idleMs,
       tailBytes: config.tailBytes,
       readBudgetPerPoll: config.readBudgetPerPoll,
+      // Walking ~180 session files every 500ms dominated idle CPU, so the
+      // tailer only sweeps the tree every few seconds and stats hot files in
+      // between (see eventlog.mjs).
+      scanMs: config.eventScanMs,
+      hotMs: config.eventHotMs,
     });
     this.eventlog.onEvents = (sessionId, events, meta) => this.handleEvents(sessionId, events, meta);
 
@@ -159,6 +170,8 @@ export class Collector extends EventEmitter {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     if (this.inFlight) await this.inFlight.catch(() => {});
+    this.eventlog.stop?.();
+    this.projcache.stop?.();
   }
 
   // -------------------------------------------------------------------------
@@ -692,7 +705,7 @@ export class Collector extends EventEmitter {
         cursors: this.eventlog.cursorSummary(),
       },
       sources: {
-        projcache: { ...proj, dir: this.config.projcacheDir },
+        projcache: { ...proj, watch: this.projcache.watchState, dir: this.config.projcacheDir },
         events: { ...this.eventlog.cursorSummary(), dir: this.config.eventsRoot },
         workspaces: this.workspaceIndex.list().length,
       },

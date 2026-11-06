@@ -108,6 +108,14 @@ export function createHud(
   // v2.9 面板收放：桌面端四块常驻面板的本地记忆（移动端 loadFold 恒为全展开）
   const panelFold = loadFold();
   const tokenSamples: number[] = [];
+  // main owns the user's W/hud preference and passes the final visibility state.
+  // Do not independently resume on visibilitychange: that would override W.
+  let visible = !document.hidden;
+  let deferredViewSync = false;
+  let cachedFleet: ClientFleetSnapshot | null = null;
+  let cachedSystem: SystemSnapshot | null = null;
+  let cachedToolCounts = emptyToolCounts();
+  let cachedProcAgg: ReturnType<typeof computeProcAgg> = null;
 
   // ── 图层：顶栏（v2.0 含「智能体 ｜ 整机」视图铭牌，v2.3 含「璇玑 / 深空」主题铭牌）──
   const topbar = createTopbar(container, {
@@ -242,6 +250,10 @@ export function createHud(
   let announcePending = '';
   function announce(text: string): void {
     if (!text) return;
+    if (!visible) {
+      announcePending = text;
+      return;
+    }
     const now = Date.now();
     if (now - announceLast >= 2000) {
       announceLast = now;
@@ -277,9 +289,17 @@ export function createHud(
   }
 
   function refreshTopbar(): void {
+    if (fleet !== cachedFleet) {
+      cachedFleet = fleet;
+      cachedToolCounts = toolCountsOf(fleet);
+    }
+    if (system !== cachedSystem) {
+      cachedSystem = system;
+      cachedProcAgg = computeProcAgg();
+    }
     topbar.update({
       aggregates: fleet?.aggregates ?? null,
-      catCounts: toolCountsOf(fleet),
+      catCounts: cachedToolCounts,
       connection,
       source,
       mode,
@@ -290,7 +310,7 @@ export function createHud(
       system,
       systemAgeMs: systemAt > 0 ? Date.now() - systemAt : 0,
       theme,
-      procAgg: computeProcAgg(),
+      procAgg: cachedProcAgg,
     });
   }
 
@@ -349,8 +369,15 @@ export function createHud(
 
   function applyView(next: ViewKind): void {
     view = next;
+    if (!visible) {
+      deferredViewSync = true;
+      topbar.setView(next);
+      syncSysTimer();
+      return;
+    }
     container.dataset.view = next;
     topbar.setView(next);
+    syncSysTimer();
     if (next === 'agents') {
       procPanel.close();
       systemPanel.setSource(source);
@@ -401,21 +428,25 @@ export function createHud(
   function setSystem(next: SystemSnapshot | null): void {
     system = next;
     systemAt = next ? Date.now() : 0;
+    cachedSystem = null;
     systemPanel.setSystem(next);
     procPanel.setSystem(next);
     // v2.5 百工：《工籍》《器牒》只读 system.procs（2s 一帧，O(n) 聚合一次）
     processList.setSystem(next);
     processDetail.setSystem(next);
     processDetail.setSelection(processSelection);
-    refreshTopbar();
-    updateCenter();
-    if (view === 'system') {
+    if (visible) {
+      refreshTopbar();
+      updateCenter();
+    }
+    syncSysTimer();
+    if (visible && view === 'system') {
       announce(
         next && next.available
           ? `整机视图 · CPU ${Math.round(next.cpu.usage * 100)}% 内存 ${Math.round(next.mem.usedPct * 100)}%`
           : '整机视图 · 遥测不可用',
       );
-    } else if (view === 'processes') {
+    } else if (visible && view === 'processes') {
       const agg = computeProcAgg();
       announce(agg ? `百工视图 · ${agg.count} 进程 · CPU ${Math.round(agg.cpuPct)}%` : '百工视图 · 进程遥测不可用');
     }
@@ -451,8 +482,9 @@ export function createHud(
   function setTheme(next: ThemeId): void {
     if (theme === next) return;
     theme = next;
-    container.dataset.theme = next;
     topbar.setTheme(next);
+    if (!visible) return;
+    container.dataset.theme = next;
     if (themeFadeTimer) window.clearTimeout(themeFadeTimer);
     container.classList.remove('is-theme-in');
     // 强制回流，保证连续切换时淡入也能重播（只淡入、不位移、不动布局）
@@ -467,6 +499,7 @@ export function createHud(
 
   // ── 中央铭文 ────────────────────────────────────────────────
   function updateCenter(): void {
+    if (!visible) return;
     const sessions = fleet?.sessions.length ?? 0;
     if (connection === 'offline') {
       centerNote.hidden = false;
@@ -492,6 +525,7 @@ export function createHud(
 
   // ── 提示区 ──────────────────────────────────────────────────
   function refreshHint(): void {
+    if (!visible) return;
     const keys = hintKeysFor(view, autoPaused);
     hint.dataset.auto = autoPaused ? 'off' : 'on';
     setText(hintKeys, keys);
@@ -524,10 +558,12 @@ export function createHud(
   }
 
   function refreshDemo(): void {
+    if (!visible) return;
     demoNote.hidden = !(source === 'demo' && hasFleet);
   }
 
   function refreshSourceText(): void {
+    if (!visible) return;
     help.setSource(source, connection);
   }
 
@@ -611,15 +647,26 @@ export function createHud(
     }
   }
 
-  // 整机帧断流时也要让顶栏「候采」出现：每秒复查一次时间戳（无数据也更新）
-  const sysTimer = window.setInterval(() => {
-    if (view === 'system' || systemAt > 0) refreshTopbar();
-  }, 1000);
+  // Keep freshness checks only while the HUD can paint and the system view is relevant.
+  let sysTimer = 0;
+  function syncSysTimer(): void {
+    const needed = visible && (view === 'system' || systemAt > 0);
+    if (needed && !sysTimer) sysTimer = window.setInterval(refreshTopbar, 1000);
+    else if (!needed && sysTimer) {
+      window.clearInterval(sysTimer);
+      sysTimer = 0;
+    }
+  }
+  syncSysTimer();
 
   // ── 契约实现 ────────────────────────────────────────────────
   function setFleet(snap: ClientFleetSnapshot): void {
     fleet = snap;
     hasFleet = true;
+    if (snap !== cachedFleet) {
+      cachedFleet = snap;
+      cachedToolCounts = toolCountsOf(snap);
+    }
     source = snap.source ?? null;
     const rate = snap.aggregates?.tokenRate;
     if (typeof rate === 'number' && Number.isFinite(rate)) {
@@ -630,12 +677,13 @@ export function createHud(
     dossier.setFleet(snap);
     systemPanel.setSource(source);
     procPanel.setSource(source);
+    if (!visible) return;
     boot.setAgents();
     refreshTopbar();
     refreshDemo();
     refreshSourceText();
     updateCenter();
-    if (view === 'agents' && hasFleet) {
+    if (visible && view === 'agents' && hasFleet) {
       const counts = agentCounts();
       if (counts) announce(`观星 · ${counts.live} 位在行 · 诸源 ${counts.sources}`);
     }
@@ -649,15 +697,20 @@ export function createHud(
     for (const ev of events) {
       if (ev.kind !== 'error') continue;
       const text = ev.detail ? truncate(ev.detail, 42) : '有误';
-      topbar.raiseAlarm('error', `有误 · ${text}`, false);
-      topbar.flashError();
       if (primed && view === 'agents' && (!dossier.isOpen() || selection == null)) dossier.setSelection(ev.sessionId);
-      refreshPanelState();
+      if (visible) {
+        topbar.raiseAlarm('error', `有误 · ${text}`, false);
+        topbar.flashError();
+        refreshPanelState();
+      } else {
+        announce(`有误 · ${text}`);
+      }
       break;
     }
   }
 
   function setSelection(id: string | null): void {
+    if (selection === id) return;
     selection = id;
     ledger.setSelection(id);
     dossier.setSelection(id);
@@ -675,20 +728,28 @@ export function createHud(
     consolePanel.setParams(params, setOpts);
   }
 
+  function syncConnectionAlarm(): void {
+    if (!visible) return;
+    if (connection === 'offline') {
+      topbar.raiseAlarm('offline', `仪器停止转动 · 检查采集器 (${COLLECTOR})`, true);
+    } else if (connection === 'reconnecting') {
+      topbar.raiseAlarm('reconnect', '墨尽 · 与采集器失联，正在重连……', true);
+    } else if (connection === 'live') {
+      topbar.clearConnectionAlarm();
+    }
+  }
+
   function setConnection(state: ConnectionState): void {
     const prev = connection;
     connection = state;
     ledger.setConnection(state);
+    if (!visible) return;
     refreshTopbar();
     refreshSourceText();
     updateCenter();
-    if (state === 'offline') {
-      topbar.raiseAlarm('offline', `仪器停止转动 · 检查采集器 (${COLLECTOR})`, true);
-    } else if (state === 'reconnecting') {
-      topbar.raiseAlarm('reconnect', '墨尽 · 与采集器失联，正在重连……', true);
-    } else if (state === 'live') {
-      topbar.clearStickyAlarm();
-      if (prev === 'offline' || prev === 'reconnecting') toasts.show('观测复通 · 星图续转');
+    syncConnectionAlarm();
+    if (state === 'live' && (prev === 'offline' || prev === 'reconnecting')) {
+      toasts.show('观测复通 · 星图续转');
     }
   }
 
@@ -711,6 +772,42 @@ export function createHud(
   function setStats(next: FrameStats | null): void {
     stats = next;
     void stats;
+  }
+
+  function setVisible(next: boolean): void {
+    const changed = visible !== next;
+    visible = next;
+    topbar.setVisible(next);
+    ledger.setVisible(next);
+    dossier.setVisible(next);
+    systemPanel.setVisible(next);
+    procPanel.setVisible(next);
+    processList.setVisible(next);
+    processDetail.setVisible(next);
+    if (!next) {
+      syncSysTimer();
+      return;
+    }
+
+    container.dataset.view = view;
+    container.dataset.theme = theme;
+    if (deferredViewSync) {
+      deferredViewSync = false;
+      applyView(view);
+    }
+    refreshTopbar();
+    refreshHint();
+    refreshSourceText();
+    refreshDemo();
+    updateCenter();
+    refreshPanelState();
+    syncConnectionAlarm();
+    if (announcePending) {
+      const pending = announcePending;
+      announcePending = '';
+      announce(pending);
+    }
+    syncSysTimer();
   }
 
   function showToast(text: string): void {
@@ -845,6 +942,7 @@ export function createHud(
     showToast,
     dispose,
     setView,
+    setVisible,
     setSystem,
     setSourceFilter,
     setTheme,

@@ -249,6 +249,8 @@ export interface SceneHandle {
   /** v2.1 验收用：屏幕坐标 → 世界坐标。可选能力。 */
   unprojectPoint?(x: number, y: number): { x: number; y: number };
   setReducedMotion(reduced: boolean): void;
+  /** 后台标签页不绘制；恢复时清理帧时窗口，不能把隐藏时间当作慢帧降档。 */
+  setSuspended?(suspended: boolean): void;
   dispose(): void;
 }
 
@@ -290,6 +292,8 @@ export interface HudHandle {
   setAutoPaused(paused: boolean): void;
   setReducedMotion(reduced: boolean): void;
   setStats(stats: FrameStats | null): void;
+  /** W 壁纸模式只保留数据/历史，不更新隐藏的 DOM；恢复时同步最新状态。 */
+  setVisible?(visible: boolean): void;
   /** 返回 true 表示该键已被 HUD 消费（面板开关、调参台内导航等） */
   handleKey(event: KeyboardEvent): boolean;
   showToast(text: string): void;

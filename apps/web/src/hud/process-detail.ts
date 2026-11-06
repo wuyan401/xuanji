@@ -22,6 +22,7 @@ export interface ProcessDetailOptions {
 export interface ProcessDetailHandle {
   root: HTMLElement;
   setSystem(snapshot: SystemSnapshot | null): void;
+  setVisible(visible: boolean): void;
   setSource(source: SourceKind | null): void;
   setSelection(pid: number | null): void;
   /** 移动端：展开为 bottom sheet / 收起 */
@@ -253,6 +254,7 @@ export function createProcessDetail(parent: HTMLElement, opts: ProcessDetailOpti
   let source: SourceKind | null = null;
   let open = false;
   let available = false;
+  let visible = !document.hidden;
 
   function writeMeta(): void {
     const suffix = source === 'demo' ? ' · 演' : '';
@@ -264,6 +266,7 @@ export function createProcessDetail(parent: HTMLElement, opts: ProcessDetailOpti
   }
 
   function renderOverview(): void {
+    if (!visible || !open) return;
     setText(countRow.value, String(agg.count));
     countRow.value.dataset.state = agg.count > 0 ? 'ok' : 'empty';
     setText(cpuRow.value, agg.count > 0 ? `${agg.cpuSum.toFixed(1)}%` : '—');
@@ -297,6 +300,7 @@ export function createProcessDetail(parent: HTMLElement, opts: ProcessDetailOpti
   }
 
   function renderDetail(): void {
+    if (!visible || !open) return;
     const proc = selected != null ? byPid.get(selected) : undefined;
     const has = !!proc && available;
     overview.hidden = has;
@@ -360,6 +364,7 @@ export function createProcessDetail(parent: HTMLElement, opts: ProcessDetailOpti
 
   function setOpen(next: boolean): void {
     open = next;
+    if (!visible) return;
     root.dataset.open = next ? 'true' : 'false';
     // v2.9：外层容器同步 open 态，供 fold.css 把整块收窄成 28px 竖签
     wrap.dataset.open = next ? 'true' : 'false';
@@ -368,6 +373,11 @@ export function createProcessDetail(parent: HTMLElement, opts: ProcessDetailOpti
     closeBtn.setAttribute('aria-expanded', next ? 'true' : 'false');
     root.classList.toggle('is-open', next);
     root.classList.toggle('is-unrolled', next);
+    if (next) {
+      renderOverview();
+      renderDetail();
+      writeMeta();
+    }
   }
   tab.addEventListener('click', () => {
     setOpen(true);
@@ -376,6 +386,12 @@ export function createProcessDetail(parent: HTMLElement, opts: ProcessDetailOpti
 
   function setSystem(next: SystemSnapshot | null): void {
     snapshot = next;
+    if (!visible || !open) {
+      available = !!next && next.available;
+      byPid = new Map((available ? next?.procs ?? [] : []).map((proc) => [proc.pid, proc]));
+      agg = aggregate(next);
+      return;
+    }
     available = !!next && next.available;
     byPid = new Map((available ? next?.procs ?? [] : []).map((proc) => [proc.pid, proc]));
     agg = aggregate(next);
@@ -401,8 +417,18 @@ export function createProcessDetail(parent: HTMLElement, opts: ProcessDetailOpti
   return {
     root: wrap,
     setSystem,
+    setVisible(next: boolean): void {
+      if (visible === next) return;
+      visible = next;
+      if (next) {
+        renderOverview();
+        renderDetail();
+      }
+    },
     setSource(next: SourceKind | null): void {
+      if (source === next) return;
       source = next;
+      if (!visible) return;
       writeMeta();
     },
     setSelection,

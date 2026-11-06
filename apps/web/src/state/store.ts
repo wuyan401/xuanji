@@ -9,11 +9,13 @@ import type {
   ConnectionState,
   FleetFrame,
   FleetTickFrame,
+  FleetDeltaFrame,
   Sector,
   SystemFrame,
   SystemSnapshot,
 } from './types';
 import { EMPTY_AGGREGATES, EMPTY_SNAPSHOT, EMPTY_SYSTEM } from './types';
+import { retainJson, retainSessions, sameJson } from './reconcile';
 
 const EVENT_RING_MAX = 400;
 const RECONNECT_MIN_MS = 1200;
@@ -59,6 +61,9 @@ export class FleetStore {
   private disposed = false;
   private everConnected = false;
   private polling = false;
+  private pollGeneration = 0;
+  private pollInFlight = false;
+  private pollController: AbortController | null = null;
   private lastMessageAt = 0;
   /** ?demo=1 时透传给服务端 */
   private demo = false;
@@ -138,17 +143,19 @@ export class FleetStore {
     this.closeStream();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.staleTimer) clearTimeout(this.staleTimer);
-    if (this.pollTimer) clearInterval(this.pollTimer);
     this.reconnectTimer = null;
     this.staleTimer = null;
-    this.pollTimer = null;
+    this.stopPollingFallback();
     this.setConnection('offline');
   }
 
   private openStream(): void {
     this.closeStream();
     this.setConnection(this.everConnected || this.reconnectAttempt > 0 ? 'reconnecting' : 'connecting');
-    const url = this.demo ? `${this.streamUrl}?demo=1` : this.streamUrl;
+    const search = new URLSearchParams({ delta: '1' });
+    if (this.demo) search.set('demo', '1');
+    // 老服务忽略 delta 参数仍会返回 full fleet，兼容本地开发/mock/回放。
+    const url = `${this.streamUrl}${this.streamUrl.includes('?') ? '&' : '?'}${search}`;
     let es: EventSource;
     try {
       es = new EventSource(url);
@@ -158,27 +165,39 @@ export class FleetStore {
     }
     this.source = es;
 
+    const isCurrentStream = () => this.source === es && !this.disposed;
     es.addEventListener('fleet', (ev) => {
+      if (!isCurrentStream()) return;
       const frame = this.parse<FleetFrame>(ev.data);
       if (frame) this.applyFleet(frame);
-      this.noteMessage();
+      this.noteMessage(es);
+    });
+    es.addEventListener('delta', (ev) => {
+      if (!isCurrentStream()) return;
+      const frame = this.parse<FleetDeltaFrame>(ev.data);
+      if (frame) this.applyDelta(frame);
+      this.noteMessage(es);
     });
     es.addEventListener('tick', (ev) => {
+      if (!isCurrentStream()) return;
       const frame = this.parse<FleetTickFrame>(ev.data);
       if (frame) this.applyTick(frame);
-      this.noteMessage();
+      this.noteMessage(es);
     });
     es.addEventListener('system', (ev) => {
+      if (!isCurrentStream()) return;
       const frame = this.parse<SystemFrame>(ev.data);
       if (frame) this.applySystem(frame);
-      this.noteMessage();
+      this.noteMessage(es);
     });
     es.onopen = () => {
+      if (!isCurrentStream()) return;
       this.everConnected = true;
       this.reconnectAttempt = 0;
-      this.noteMessage();
+      this.noteMessage(es);
     };
     es.onerror = () => {
+      if (!isCurrentStream()) return;
       // 手动接管重连：关闭后自己按退避重来，并临时用轮询兜底。
       this.closeStream();
       this.startPollingFallback();
@@ -214,29 +233,47 @@ export class FleetStore {
   private startPollingFallback(): void {
     if (this.polling || this.disposed) return;
     this.polling = true;
+    const generation = ++this.pollGeneration;
     const poll = async () => {
+      if (!this.polling || generation !== this.pollGeneration || this.disposed || this.pollInFlight) return;
+      this.pollInFlight = true;
+      const controller = new AbortController();
+      this.pollController = controller;
+      const isCurrent = () => this.polling && generation === this.pollGeneration && !this.disposed;
       try {
-        const res = await fetch(this.demo ? '/api/fleet?demo=1' : '/api/fleet', {
-          cache: 'no-store',
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = (await res.json()) as FleetFrame;
-        this.applyFleet({ ...data, type: 'fleet' });
-        this.setConnection('reconnecting');
-      } catch {
-        if (this.reconnectAttempt > 3) this.setConnection('offline');
-      }
-      // 整机遥测：旧版后端没有 /api/system，404 时静默忽略
-      try {
-        const res = await fetch(this.demo ? '/api/system?demo=1' : '/api/system', {
-          cache: 'no-store',
-        });
-        if (res.ok) {
-          const sys = (await res.json()) as SystemFrame | SystemSnapshot;
-          this.applySystem(sys as SystemFrame);
+        try {
+          const res = await fetch(this.demo ? '/api/fleet?demo=1' : '/api/fleet', {
+            cache: 'no-store',
+            signal: controller.signal,
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = (await res.json()) as FleetFrame;
+          if (!isCurrent()) return;
+          this.applyFleet({ ...data, type: 'fleet' });
+          this.setConnection('reconnecting');
+        } catch {
+          if (!isCurrent()) return;
+          if (this.reconnectAttempt > 3) this.setConnection('offline');
         }
-      } catch {
-        /* 无整机通道时忽略 */
+        if (!isCurrent()) return;
+        // 整机遥测：旧版后端没有 /api/system，404 时静默忽略
+        try {
+          const res = await fetch(this.demo ? '/api/system?demo=1' : '/api/system', {
+            cache: 'no-store',
+            signal: controller.signal,
+          });
+          if (res.ok) {
+            const sys = (await res.json()) as SystemFrame | SystemSnapshot;
+            if (isCurrent()) this.applySystem(sys as SystemFrame);
+          }
+        } catch {
+          /* 无整机通道时忽略 */
+        }
+      } finally {
+        if (generation === this.pollGeneration) {
+          this.pollInFlight = false;
+          if (this.pollController === controller) this.pollController = null;
+        }
       }
     };
     void poll();
@@ -245,17 +282,22 @@ export class FleetStore {
 
   private stopPollingFallback(): void {
     this.polling = false;
+    this.pollGeneration += 1;
     if (this.pollTimer) clearInterval(this.pollTimer);
     this.pollTimer = null;
+    this.pollInFlight = false;
+    this.pollController?.abort();
+    this.pollController = null;
   }
 
-  private noteMessage(): void {
+  private noteMessage(source: EventSource): void {
+    if (this.source !== source || this.disposed) return;
     this.lastMessageAt = Date.now();
     this.stopPollingFallback();
     this.setConnection('live');
     if (this.staleTimer) clearTimeout(this.staleTimer);
     this.staleTimer = setTimeout(() => {
-      if (this.disposed) return;
+      if (this.disposed || this.source !== source) return;
       if (Date.now() - this.lastMessageAt > STALE_MS) {
         this.closeStream();
         this.startPollingFallback();
@@ -273,10 +315,17 @@ export class FleetStore {
 
   // ---- 帧处理 ----
   private applyFleet(frame: FleetFrame): void {
-    const sessions = Array.isArray(frame.sessions) ? frame.sessions : [];
-    this.sessionById = new Map(sessions.map((s) => [s.id, s]));
-    this.sectorList = Array.isArray(frame.sectors) ? frame.sectors : [];
-    this.aggregates = frame.aggregates ?? this.aggregates;
+    const sessions = retainSessions(
+      this.snapshot.sessions,
+      Array.isArray(frame.sessions) ? frame.sessions : [],
+      this.sessionById,
+    );
+    if (sessions !== this.snapshot.sessions) {
+      this.sessionById = new Map(sessions.map((s) => [s.id, s]));
+    }
+    this.sectorList = retainJson(this.sectorList, Array.isArray(frame.sectors) ? frame.sectors : []);
+    this.aggregates = retainJson(this.aggregates, frame.aggregates ?? this.aggregates);
+    const sources = retainJson(this.snapshot.sources, Array.isArray(frame.sources) ? frame.sources : this.snapshot.sources);
     if (Array.isArray(frame.events) && frame.events.length) {
       this.appendEvents(frame.events, true);
     }
@@ -285,36 +334,72 @@ export class FleetStore {
       source: frame.source ?? 'live',
       sessions,
       sectors: this.sectorList,
-      sources: Array.isArray(frame.sources) ? frame.sources : this.snapshot.sources,
+      sources,
       aggregates: this.aggregates,
       events: this.eventsRing,
-      connection: 'live',
+      connection: this.snapshot.connection,
+      receivedAt: Date.now(),
+    };
+    for (const fn of this.fleetListeners) fn(this.snapshot);
+  }
+
+  private mergeSessions(incoming: AgentSession[] | undefined, removed: string[] = []): AgentSession[] {
+    let changed = false;
+    for (const id of removed) changed = this.sessionById.delete(id) || changed;
+    if (Array.isArray(incoming)) {
+      for (const session of incoming) {
+        const old = this.sessionById.get(session.id);
+        if (!old || !sameJson(old, session)) {
+          this.sessionById.set(session.id, session);
+          changed = true;
+        }
+      }
+    }
+    if (!changed) return this.snapshot.sessions;
+    // Preserve ordering until a structural full snapshot supplies the new backend order.
+    const sessions: AgentSession[] = [];
+    const seen = new Set<string>();
+    for (const previous of this.snapshot.sessions) {
+      const next = this.sessionById.get(previous.id);
+      if (next) { sessions.push(next); seen.add(next.id); }
+    }
+    for (const [id, next] of this.sessionById) if (!seen.has(id)) sessions.push(next);
+    return sessions;
+  }
+
+  private applyDelta(frame: FleetDeltaFrame): void {
+    // A reconnect always starts with a full snapshot. Never apply an orphan delta.
+    if (!this.everConnected && !this.snapshot.generatedAt) return;
+    const sessions = this.mergeSessions(frame.sessions, frame.removed);
+    this.aggregates = retainJson(this.aggregates, frame.aggregates ?? this.aggregates);
+    if (Array.isArray(frame.sectors)) this.sectorList = retainJson(this.sectorList, frame.sectors);
+    const sources = Array.isArray(frame.sources) ? retainJson(this.snapshot.sources, frame.sources) : this.snapshot.sources;
+    this.snapshot = {
+      ...this.snapshot,
+      generatedAt: Number(frame.at) || Date.now(),
+      sessions,
+      sectors: this.sectorList,
+      sources,
+      aggregates: this.aggregates,
+      events: this.eventsRing,
       receivedAt: Date.now(),
     };
     for (const fn of this.fleetListeners) fn(this.snapshot);
   }
 
   private applyTick(frame: FleetTickFrame): void {
-    if (Array.isArray(frame.sessions) && frame.sessions.length) {
-      for (const s of frame.sessions) this.sessionById.set(s.id, s);
-    }
-    if (frame.aggregates) this.aggregates = frame.aggregates;
+    const sessions = this.mergeSessions(frame.sessions);
+    const aggregates = retainJson(this.aggregates, frame.aggregates ?? this.aggregates);
+    const sources = retainJson(this.snapshot.sources, Array.isArray(frame.sources) ? frame.sources : this.snapshot.sources);
     const fresh = Array.isArray(frame.events) ? frame.events : [];
-    if (!fresh.length && !frame.sessions?.length) return;
+    const hasChanges = sessions !== this.snapshot.sessions || aggregates !== this.aggregates || sources !== this.snapshot.sources;
+    this.aggregates = aggregates;
     if (fresh.length) this.appendEvents(fresh, false);
-    // tick 里没带全量 sessions：把已知的变更合并回快照
-    const sessions = frame.sessions?.length
-      ? this.snapshot.sessions.map((s) => this.sessionById.get(s.id) ?? s)
-      : this.snapshot.sessions;
-    if (frame.sessions?.length) {
-      for (const s of frame.sessions) {
-        if (!sessions.some((x) => x.id === s.id)) sessions.push(s);
-      }
-    }
+    if (!fresh.length && !hasChanges) return;
     this.snapshot = {
       ...this.snapshot,
       sessions,
-      sources: Array.isArray(frame.sources) ? frame.sources : this.snapshot.sources,
+      sources,
       aggregates: this.aggregates,
       events: this.eventsRing,
       receivedAt: Date.now(),
@@ -326,6 +411,8 @@ export class FleetStore {
   private applySystem(frame: SystemFrame): void {
     const snap = frame as SystemSnapshot;
     if (!snap || typeof snap.at !== 'number') return;
+    // 重连首帧/REST 兜底可能重发同一采样，不重复入历史或重绘 sparkline。
+    if (snap.at === this.system.at && sameJson(this.system, snap)) return;
     this.system = snap;
     if (snap.available) {
       const list = this.systemHistory;
@@ -340,7 +427,8 @@ export class FleetStore {
           if (list[mid].at < snap.at) lo = mid + 1;
           else hi = mid;
         }
-        list.splice(lo, 0, snap);
+        if (list[lo]?.at === snap.at) list[lo] = snap;
+        else list.splice(lo, 0, snap);
       }
       while (list.length > SYSTEM_HISTORY_MAX) list.shift();
     }

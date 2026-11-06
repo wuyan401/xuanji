@@ -132,7 +132,7 @@ DSH 本机存储
 - 同一信息不得两边重复绘制（除了选中星与档案的对应高亮，用统一的 `selection` 状态）。
 - 所有全屏转场（开机、模式切换遮罩、扫描扫过）由 DOM 覆盖层 + CSS 完成；Canvas 不画全屏 HTML 文本。
 
-**主循环**：`requestAnimationFrame` 单循环在 `main.ts` 中（scene 提供 `frame(nowMs)`；store 数据变化通过回调入队，不直接触发渲染）。`document.hidden` 时降频到 4fps 并暂停运镜；重新可见时平滑恢复。
+**主循环**：`requestAnimationFrame` 单循环在 `main.ts` 中（scene 提供 `frame(nowMs)`；store 数据变化通过回调入队，不直接触发渲染）。`document.hidden` 时取消 rAF 并暂停场景绘制；数据继续进入 store/HUD 缓存，重新可见时同步最新快照并清理过期场景事件，再恢复循环，不把隐藏时长计入帧节流。见 [性能验收记录](PERFORMANCE-2026-11.md)。
 
 ---
 
